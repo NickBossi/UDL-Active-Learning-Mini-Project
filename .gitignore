@@ -1,0 +1,11 @@
+# uv / Python environments
+.venv/
+venv/
+env/
+
+# Python compiled files
+__pycache__/
+*.pycx
+
+# System files (Optional)
+.DS_Store
