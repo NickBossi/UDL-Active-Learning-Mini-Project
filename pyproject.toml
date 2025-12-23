@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "google>=3.0.0",
     "ipykernel>=6.31.0",
     "jupyter>=1.1.1",
     "matplotlib>=3.9.4",
@@ -12,4 +13,9 @@ dependencies = [
     "torch>=2.8.0",
     "torchvision>=0.23.0",
     "tqdm>=4.67.1",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.31.0",
 ]
