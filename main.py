@@ -4,6 +4,166 @@ a, b, c = list
 
 print(a)
 
+
+
+
+
+
+
+
+
+
+
+class Analytic_Inference_Layer:
+    def __init__(self, feature_dim, output_dim, s2 = 1.0, sigma2 = 0.1):
+        self.K = feature_dim
+        self.D = output_dim
+        self.s2 = s2
+        self.sigma2 = sigma2
+
+    def calc_posterior(self, features, targets):
+        device = features.device
+
+        #self.K, self.D, self.s2, self.sigma2= self.K.to(device), self.D.to(device) , self.s2.to(device), self.sigma2.to(device)
+        self.Sigma_inv = (1/self.sigma2) * (features.T @ features) + (torch.eye(self.K, device = device) / self.s2)
+
+        self.Sigma_post = torch.inverse(self.Sigma_inv)
+
+        self.M = (1/self.sigma2) * self.Sigma_post @ (features.T @ targets) 
+    
+    def calc_predictive(self, x_star_features):
+
+        self.phi = x_star_features.to(self.M.device)
+        self.pred_mean = self.phi @ self.M
+
+        epistemic_variance = torch.einsum('ni,ij,nj->n', self.phi, self.Sigma_post, self.phi)
+
+        self.pred_variance = self.sigma2 + epistemic_variance
+
+        return self.pred_mean, self.pred_variance
+    
+def train_reg_model(model, train_indices, lr = 3e-4, weight_decay = 1e-6, n_epochs = 100, s = 1, sigma = 1):
+    train_dataset = get_dataset()
+    train_loader = DataLoader(Subset(train_dataset, train_indices), batch_size=64, shuffle=True)
+    n_batches = len(train_loader)
+
+    # Initialize model, optimizer and loss function 
+    model = model.float()
+    model.train()
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay = weight_decay)
+    criterion = nn.MSELoss()
+
+    # Training loop
+    for epoch in range(n_epochs):
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data = data.to(device).float()
+
+            # Change predictions to one-hot encodings
+            target = (F.one_hot(target, num_classes = 10)).to(device).float()
+
+            optimizer.zero_grad()
+            # Extract prediction
+            output, _ = model(data)
+            
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+    
+    return model
+
+
+def test_reg_model(model, test_loader = test_loader):
+
+    total_loss = 0.0
+    n = 0
+
+    model.eval()
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(test_loader):
+            data = data.to(device)
+            # Change predictions to one-hot encodings
+            target = (F.one_hot(target, num_classes = 10)).float().to(device)
+
+            # Extract prediction
+            output, _ = model(data)
+        
+            loss = nn.MSELoss(reduction = 'sum')(output, target)      #gets sum not mean
+
+            total_loss += loss.item()
+            n += target.numel()
+
+    
+    RMSE = np.sqrt(total_loss/n) 
+
+
+    return RMSE
+
+
+def test_AI_model(model, AI_Layer, test_loader = test_loader):
+
+    total_loss = 0.0
+    n = 0
+
+    model.eval()
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(test_loader):
+            data = data.to(device)
+            # Change predictions to one-hot encodings
+            target = (F.one_hot(target, num_classes = 10)).float().to(device)
+
+            # Extract prediction
+            _, features = model(data)
+
+            mu_star, _ = AI_Layer.calc_predictive(x_star_features = features)
+        
+            loss = nn.MSELoss(reduction = 'sum')(mu_star, target)      #gets sum not mean
+
+            total_loss += loss.item()
+            n += target.numel()
+
+    
+    RMSE = np.sqrt(total_loss/n) 
+
+
+    return RMSE
+
+
+def calc_SigmaW(model, sigma2, s2, train_indices):
+    train_dataset = get_dataset()
+    train_loader = DataLoader(Subset(train_dataset, train_indices), batch_size = len(train_indices))
+
+
+    model.eval()
+    
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data = data.to(device)
+            _, phi = model(data)
+            K = phi.shape[1]
+
+    inv = (1/sigma2) * phi.T @ phi + (1/s2) * torch.eye(K).to(device)
+
+    return torch.linalg.inv(inv)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 [[True, 2, 'entropy', 10, 0.5349], [True, 2, 'entropy', 20, 0.6012], [True, 2, 'entropy', 30, 0.6154], [True, 2, 'entropy', 40, 0.5993], [True, 2, 'entropy', 50, 0.6577], [True, 2, 'entropy', 60, 0.7158], [True, 2, 'entropy', 70, 0.7095], [True, 2, 'entropy', 80, 0.7388], [True, 2, 'entropy', 90, 0.7428], [True, 2, 'entropy', 100, 0.7543], [True, 2, 'entropy', 110, 0.7963], [True, 2, 'entropy', 120, 0.8314], [True, 2, 'entropy', 130, 0.819], [True, 2, 'entropy', 140, 0.8346], [True, 2, 'entropy', 150, 0.8514], [True, 2, 'entropy', 160, 0.8528], [True, 2, 'entropy', 170, 0.8713], [True, 2, 'entropy', 180, 0.8503], [True, 2, 'entropy', 190, 0.8731], [True, 2, 'entropy', 200, 0.8926], [True, 2, 'entropy', 210, 0.8767], [True, 2, 'entropy', 220, 0.8788], [True, 2, 'entropy', 230, 0.8978], [True, 2, 'entropy', 240, 0.8934], [True, 2, 'entropy', 250, 0.9198], [True, 2, 'entropy', 260, 0.9092], [True, 2, 'entropy', 270, 0.9217], [True, 2, 'entropy', 280, 0.9227], [True, 2, 'entropy', 290, 0.9322], [True, 2, 'entropy', 300, 0.939], [True, 2, 'entropy', 310, 0.931], [True, 2, 'entropy', 320, 0.941], [True, 2, 'entropy', 330, 0.9468], [True, 2, 'entropy', 340, 0.9416], [True, 2, 'entropy', 350, 0.947], [True, 2, 'entropy', 360, 0.9469], [True, 2, 'entropy', 370, 0.9395], [True, 2, 'entropy', 380, 0.9377], [True, 2, 'entropy', 390, 0.9469], [True, 2, 'entropy', 400, 0.9496], [True, 2, 'entropy', 410, 0.9433], [True, 2, 'entropy', 420, 0.9515], [True, 2, 'entropy', 430, 0.9616], [True, 2, 'entropy', 440, 0.9606], [True, 2, 'entropy', 450, 0.9599], [True, 2, 'entropy', 460, 0.9614], [True, 2, 'entropy', 470, 0.9679], [True, 2, 'entropy', 480, 0.9654], [True, 2, 'entropy', 490, 0.966], [True, 2, 'entropy', 500, 0.9659], [True, 2, 'entropy', 510, 0.9646], [True, 2, 'entropy', 520, 0.969], [True, 2, 'entropy', 530, 0.9686], [True, 2, 'entropy', 540, 0.9675], [True, 2, 'entropy', 550, 0.9694], [True, 2, 'entropy', 560, 0.9709], [True, 2, 'entropy', 570, 0.9674], [True, 2, 'entropy', 580, 0.9708], [True, 2, 'entropy', 590, 0.9725], [True, 2, 'entropy', 600, 0.9731], [True, 2, 'entropy', 610, 0.9702], [True, 2, 'entropy', 620, 0.9743], [True, 2, 'entropy', 630, 0.9765], [True, 2, 'entropy', 640, 0.9731], [True, 2, 'entropy', 650, 0.9735], [True, 2, 'entropy', 660, 0.9728], [True, 2, 'entropy', 670, 0.9772], [True, 2, 'entropy', 680, 0.9762], [True, 2, 'entropy', 690, 0.9689], [True, 2, 'entropy', 700, 0.9745], [True, 2, 'entropy', 710, 0.9773], [True, 2, 'entropy', 720, 0.9738], [True, 2, 'entropy', 730, 0.9763], [True, 2, 'entropy', 740, 0.9713], [True, 2, 'entropy', 750, 0.9698], [True, 2, 'entropy', 760, 0.9767], [True, 2, 'entropy', 770, 0.9782], [True, 2, 'entropy', 780, 0.977], [True, 2, 'entropy', 790, 0.9787], [True, 2, 'entropy', 800, 0.9765], [True, 2, 'entropy', 810, 0.9795], [True, 2, 'entropy', 820, 0.9775], [True, 2, 'entropy', 830, 0.9791], [True, 2, 'entropy', 840, 0.9786], [True, 2, 'entropy', 850, 0.9777]]
 Accuracy for acq_fn entropy at acq-step 850 is 0.9777
 Calulating uncertainty scores using: entropy, acq_step: 860
@@ -1673,3 +1833,453 @@ Calulating uncertainty scores using: var_rat, acq_step: 1000
 [[True, 2, 'var_rat', 10, 0.5772], [True, 2, 'var_rat', 20, 0.6246], [True, 2, 'var_rat', 30, 0.6959], [True, 2, 'var_rat', 40, 0.6826], [True, 2, 'var_rat', 50, 0.7363], [True, 2, 'var_rat', 60, 0.7307], [True, 2, 'var_rat', 70, 0.7588], [True, 2, 'var_rat', 80, 0.7585], [True, 2, 'var_rat', 90, 0.7423], [True, 2, 'var_rat', 100, 0.7503], [True, 2, 'var_rat', 110, 0.7413], [True, 2, 'var_rat', 120, 0.7665], [True, 2, 'var_rat', 130, 0.7618], [True, 2, 'var_rat', 140, 0.7923], [True, 2, 'var_rat', 150, 0.788], [True, 2, 'var_rat', 160, 0.7782], [True, 2, 'var_rat', 170, 0.7952], [True, 2, 'var_rat', 180, 0.7967], [True, 2, 'var_rat', 190, 0.7964], [True, 2, 'var_rat', 200, 0.818], [True, 2, 'var_rat', 210, 0.8083], [True, 2, 'var_rat', 220, 0.7977], [True, 2, 'var_rat', 230, 0.8178], [True, 2, 'var_rat', 240, 0.8138], [True, 2, 'var_rat', 250, 0.8248], [True, 2, 'var_rat', 260, 0.819], [True, 2, 'var_rat', 270, 0.8208], [True, 2, 'var_rat', 280, 0.8187], [True, 2, 'var_rat', 290, 0.8446], [True, 2, 'var_rat', 300, 0.8551], [True, 2, 'var_rat', 310, 0.8445], [True, 2, 'var_rat', 320, 0.8404], [True, 2, 'var_rat', 330, 0.8386], [True, 2, 'var_rat', 340, 0.8428], [True, 2, 'var_rat', 350, 0.8484], [True, 2, 'var_rat', 360, 0.8475], [True, 2, 'var_rat', 370, 0.8548], [True, 2, 'var_rat', 380, 0.8557], [True, 2, 'var_rat', 390, 0.83], [True, 2, 'var_rat', 400, 0.8594], [True, 2, 'var_rat', 410, 0.8703], [True, 2, 'var_rat', 420, 0.8697], [True, 2, 'var_rat', 430, 0.8692], [True, 2, 'var_rat', 440, 0.872], [True, 2, 'var_rat', 450, 0.8632], [True, 2, 'var_rat', 460, 0.8595], [True, 2, 'var_rat', 470, 0.8624], [True, 2, 'var_rat', 480, 0.8756], [True, 2, 'var_rat', 490, 0.8672], [True, 2, 'var_rat', 500, 0.8811], [True, 2, 'var_rat', 510, 0.8824], [True, 2, 'var_rat', 520, 0.8662], [True, 2, 'var_rat', 530, 0.8845], [True, 2, 'var_rat', 540, 0.8703], [True, 2, 'var_rat', 550, 0.8856], [True, 2, 'var_rat', 560, 0.8821], [True, 2, 'var_rat', 570, 0.8791], [True, 2, 'var_rat', 580, 0.8867], [True, 2, 'var_rat', 590, 0.8814], [True, 2, 'var_rat', 600, 0.8842], [True, 2, 'var_rat', 610, 0.8842], [True, 2, 'var_rat', 620, 0.8932], [True, 2, 'var_rat', 630, 0.8976], [True, 2, 'var_rat', 640, 0.9019], [True, 2, 'var_rat', 650, 0.8874], [True, 2, 'var_rat', 660, 0.8984], [True, 2, 'var_rat', 670, 0.8852], [True, 2, 'var_rat', 680, 0.8929], [True, 2, 'var_rat', 690, 0.8954], [True, 2, 'var_rat', 700, 0.8912], [True, 2, 'var_rat', 710, 0.8821], [True, 2, 'var_rat', 720, 0.8952], [True, 2, 'var_rat', 730, 0.8933], [True, 2, 'var_rat', 740, 0.8894], [True, 2, 'var_rat', 750, 0.9128], [True, 2, 'var_rat', 760, 0.9073], [True, 2, 'var_rat', 770, 0.8992], [True, 2, 'var_rat', 780, 0.9186], [True, 2, 'var_rat', 790, 0.9214], [True, 2, 'var_rat', 800, 0.9151], [True, 2, 'var_rat', 810, 0.9259], [True, 2, 'var_rat', 820, 0.9085], [True, 2, 'var_rat', 830, 0.9272], [True, 2, 'var_rat', 840, 0.9143], [True, 2, 'var_rat', 850, 0.9153], [True, 2, 'var_rat', 860, 0.9205], [True, 2, 'var_rat', 870, 0.9268], [True, 2, 'var_rat', 880, 0.9213], [True, 2, 'var_rat', 890, 0.9232], [True, 2, 'var_rat', 900, 0.9349], [True, 2, 'var_rat', 910, 0.9253], [True, 2, 'var_rat', 920, 0.9223], [True, 2, 'var_rat', 930, 0.9287], [True, 2, 'var_rat', 940, 0.9337], [True, 2, 'var_rat', 950, 0.9291], [True, 2, 'var_rat', 960, 0.9336], [True, 2, 'var_rat', 970, 0.9318], [True, 2, 'var_rat', 980, 0.9298], [True, 2, 'var_rat', 990, 0.9368], [True, 2, 'var_rat', 1000, 0.9277]]
 Accuracy for acq_fn var_rat at acq-step 1000 is 0.9277
 313it [00:02, 135.49it/s]Test accuracy for acquisition function: var_rat = 0.9277
+
+
+
+[[True, 0, 'var_rat', 10, 0.6111], [True, 0, 'var_rat', 20, 0.6804], [True, 0, 'var_rat', 30, 0.7242], [True, 0, 'var_rat', 40, 0.7404], [True, 0, 'var_rat', 50, 0.7638], [True, 0, 'var_rat', 60, 0.7416], [True, 0, 'var_rat', 70, 0.7447], [True, 0, 'var_rat', 80, 0.7494], [True, 0, 'var_rat', 90, 0.7893], [True, 0, 'var_rat', 100, 0.7887], [True, 0, 'var_rat', 110, 0.7541], [True, 0, 'var_rat', 120, 0.7753], [True, 0, 'var_rat', 130, 0.8175], [True, 0, 'var_rat', 140, 0.8], [True, 0, 'var_rat', 150, 0.8327], [True, 0, 'var_rat', 160, 0.8022], [True, 0, 'var_rat', 170, 0.8111], [True, 0, 'var_rat', 180, 0.8206], [True, 0, 'var_rat', 190, 0.8415], [True, 0, 'var_rat', 200, 0.8161], [True, 0, 'var_rat', 210, 0.8288], [True, 0, 'var_rat', 220, 0.8486], [True, 0, 'var_rat', 230, 0.8521], [True, 0, 'var_rat', 240, 0.8406], [True, 0, 'var_rat', 250, 0.8301], [True, 0, 'var_rat', 260, 0.8604], [True, 0, 'var_rat', 270, 0.8499], [True, 0, 'var_rat', 280, 0.8396], [True, 0, 'var_rat', 290, 0.8559], [True, 0, 'var_rat', 300, 0.8664], [True, 0, 'var_rat', 310, 0.8586], [True, 0, 'var_rat', 320, 0.8576], [True, 0, 'var_rat', 330, 0.8557], [True, 0, 'var_rat', 340, 0.8666], [True, 0, 'var_rat', 350, 0.8587], [True, 0, 'var_rat', 360, 0.8619], [True, 0, 'var_rat', 370, 0.8732], [True, 0, 'var_rat', 380, 0.8735], [True, 0, 'var_rat', 390, 0.888], [True, 0, 'var_rat', 400, 0.8817], [True, 0, 'var_rat', 410, 0.8858], [True, 0, 'var_rat', 420, 0.8794], [True, 0, 'var_rat', 430, 0.8794], [True, 0, 'var_rat', 440, 0.8844], [True, 0, 'var_rat', 450, 0.8929], [True, 0, 'var_rat', 460, 0.8919], [True, 0, 'var_rat', 470, 0.898], [True, 0, 'var_rat', 480, 0.8799], [True, 0, 'var_rat', 490, 0.8791], [True, 0, 'var_rat', 500, 0.8837], [True, 0, 'var_rat', 510, 0.9018], [True, 0, 'var_rat', 520, 0.892], [True, 0, 'var_rat', 530, 0.9018], [True, 0, 'var_rat', 540, 0.8976], [True, 0, 'var_rat', 550, 0.9075], [True, 0, 'var_rat', 560, 0.9], [True, 0, 'var_rat', 570, 0.9066], [True, 0, 'var_rat', 580, 0.9008], [True, 0, 'var_rat', 590, 0.8961], [True, 0, 'var_rat', 600, 0.8911], [True, 0, 'var_rat', 610, 0.9052], [True, 0, 'var_rat', 620, 0.9071], [True, 0, 'var_rat', 630, 0.9049], [True, 0, 'var_rat', 640, 0.9206], [True, 0, 'var_rat', 650, 0.9157], [True, 0, 'var_rat', 660, 0.9119], [True, 0, 'var_rat', 670, 0.907], [True, 0, 'var_rat', 680, 0.9184], [True, 0, 'var_rat', 690, 0.9019], [True, 0, 'var_rat', 700, 0.92], [True, 0, 'var_rat', 710, 0.917], [True, 0, 'var_rat', 720, 0.9133], [True, 0, 'var_rat', 730, 0.9169], [True, 0, 'var_rat', 740, 0.9119], [True, 0, 'var_rat', 750, 0.9208], [True, 0, 'var_rat', 760, 0.9244], [True, 0, 'var_rat', 770, 0.9214], [True, 0, 'var_rat', 780, 0.9233], [True, 0, 'var_rat', 790, 0.9244], [True, 0, 'var_rat', 800, 0.9227], [True, 0, 'var_rat', 810, 0.9235], [True, 0, 'var_rat', 820, 0.9306], [True, 0, 'var_rat', 830, 0.9329], [True, 0, 'var_rat', 840, 0.9257], [True, 0, 'var_rat', 850, 0.9272], [True, 0, 'var_rat', 860, 0.9239], [True, 0, 'var_rat', 870, 0.9197], [True, 0, 'var_rat', 880, 0.9305], [True, 0, 'var_rat', 890, 0.9335], [True, 0, 'var_rat', 900, 0.9298], [True, 0, 'var_rat', 910, 0.929], [True, 0, 'var_rat', 920, 0.9296], [True, 0, 'var_rat', 930, 0.9345], [True, 0, 'var_rat', 940, 0.9366], [True, 0, 'var_rat', 950, 0.9344], [True, 0, 'var_rat', 960, 0.9353], [True, 0, 'var_rat', 970, 0.9372], [True, 0, 'var_rat', 980, 0.9274], [True, 0, 'var_rat', 990, 0.9298], [True, 0, 'var_rat', 1000, 0.9366]]
+
+[[True, 1, 'entropy', 10, 0.5218], [True, 1, 'entropy', 20, 0.6031], [True, 1, 'entropy', 30, 0.6243], [True, 1, 'entropy', 40, 0.6272], [True, 1, 'entropy', 50, 0.6533], [True, 1, 'entropy', 60, 0.6619], [True, 1, 'entropy', 70, 0.7159], [True, 1, 'entropy', 80, 0.6907], [True, 1, 'entropy', 90, 0.7407], [True, 1, 'entropy', 100, 0.7362], [True, 1, 'entropy', 110, 0.7564], [True, 1, 'entropy', 120, 0.7633], [True, 1, 'entropy', 130, 0.793], [True, 1, 'entropy', 140, 0.8299], [True, 1, 'entropy', 150, 0.8345], [True, 1, 'entropy', 160, 0.8539], [True, 1, 'entropy', 170, 0.8439], [True, 1, 'entropy', 180, 0.8808], [True, 1, 'entropy', 190, 0.8666], [True, 1, 'entropy', 200, 0.8757], [True, 1, 'entropy', 210, 0.8858], [True, 1, 'entropy', 220, 0.8918], [True, 1, 'entropy', 230, 0.8838], [True, 1, 'entropy', 240, 0.9158], [True, 1, 'entropy', 250, 0.8943], [True, 1, 'entropy', 260, 0.9224], [True, 1, 'entropy', 270, 0.9], [True, 1, 'entropy', 280, 0.9037], [True, 1, 'entropy', 290, 0.9256], [True, 1, 'entropy', 300, 0.9187], [True, 1, 'entropy', 310, 0.9195], [True, 1, 'entropy', 320, 0.9313], [True, 1, 'entropy', 330, 0.934], [True, 1, 'entropy', 340, 0.9383], [True, 1, 'entropy', 350, 0.9375], [True, 1, 'entropy', 360, 0.9273], [True, 1, 'entropy', 370, 0.941], [True, 1, 'entropy', 380, 0.9497], [True, 1, 'entropy', 390, 0.9442], [True, 1, 'entropy', 400, 0.9468], [True, 1, 'entropy', 410, 0.9503], [True, 1, 'entropy', 420, 0.9495], [True, 1, 'entropy', 430, 0.9591], [True, 1, 'entropy', 440, 0.9512], [True, 1, 'entropy', 450, 0.9583], [True, 1, 'entropy', 460, 0.9561], [True, 1, 'entropy', 470, 0.9614], [True, 1, 'entropy', 480, 0.9536], [True, 1, 'entropy', 490, 0.9625], [True, 1, 'entropy', 500, 0.9629], [True, 1, 'entropy', 510, 0.9643], [True, 1, 'entropy', 520, 0.9616], [True, 1, 'entropy', 530, 0.9642], [True, 1, 'entropy', 540, 0.9629], [True, 1, 'entropy', 550, 0.9638], [True, 1, 'entropy', 560, 0.9697], [True, 1, 'entropy', 570, 0.9652], [True, 1, 'entropy', 580, 0.9689], [True, 1, 'entropy', 590, 0.9723], [True, 1, 'entropy', 600, 0.9669], [True, 1, 'entropy', 610, 0.9742], [True, 1, 'entropy', 620, 0.9698], [True, 1, 'entropy', 630, 0.9603], [True, 1, 'entropy', 640, 0.9676], [True, 1, 'entropy', 650, 0.9681], [True, 1, 'entropy', 660, 0.9712], [True, 1, 'entropy', 670, 0.9726], [True, 1, 'entropy', 680, 0.9739], [True, 1, 'entropy', 690, 0.9699], [True, 1, 'entropy', 700, 0.9741], [True, 1, 'entropy', 710, 0.9747], [True, 1, 'entropy', 720, 0.9712], [True, 1, 'entropy', 730, 0.9687], [True, 1, 'entropy', 740, 0.9756], [True, 1, 'entropy', 750, 0.9746], [True, 1, 'entropy', 760, 0.9764], [True, 1, 'entropy', 770, 0.9734], [True, 1, 'entropy', 780, 0.9767], [True, 1, 'entropy', 790, 0.976], [True, 1, 'entropy', 800, 0.9786], [True, 1, 'entropy', 810, 0.9766], [True, 1, 'entropy', 820, 0.9787], [True, 1, 'entropy', 830, 0.9785], [True, 1, 'entropy', 840, 0.976], [True, 1, 'entropy', 850, 0.9791], [True, 1, 'entropy', 860, 0.9769], [True, 1, 'entropy', 870, 0.9811], [True, 1, 'entropy', 880, 0.9716], [True, 1, 'entropy', 890, 0.9766], [True, 1, 'entropy', 900, 0.9781], [True, 1, 'entropy', 910, 0.9787], [True, 1, 'entropy', 920, 0.9796], [True, 1, 'entropy', 930, 0.9794], [True, 1, 'entropy', 940, 0.9796], [True, 1, 'entropy', 950, 0.9821], [True, 1, 'entropy', 960, 0.981], [True, 1, 'entropy', 970, 0.9792], [True, 1, 'entropy', 980, 0.9818], [True, 1, 'entropy', 990, 0.9795], [True, 1, 'entropy', 1000, 0.9825]]
+
+[[True, 2, 'entropy', 10, 0.5349], [True, 2, 'entropy', 20, 0.6012], [True, 2, 'entropy', 30, 0.6154], [True, 2, 'entropy', 40, 0.5993], [True, 2, 'entropy', 50, 0.6577], [True, 2, 'entropy', 60, 0.7158], [True, 2, 'entropy', 70, 0.7095], [True, 2, 'entropy', 80, 0.7388], [True, 2, 'entropy', 90, 0.7428], [True, 2, 'entropy', 100, 0.7543], [True, 2, 'entropy', 110, 0.7963], [True, 2, 'entropy', 120, 0.8314], [True, 2, 'entropy', 130, 0.819], [True, 2, 'entropy', 140, 0.8346], [True, 2, 'entropy', 150, 0.8514], [True, 2, 'entropy', 160, 0.8528], [True, 2, 'entropy', 170, 0.8713], [True, 2, 'entropy', 180, 0.8503], [True, 2, 'entropy', 190, 0.8731], [True, 2, 'entropy', 200, 0.8926], [True, 2, 'entropy', 210, 0.8767], [True, 2, 'entropy', 220, 0.8788], [True, 2, 'entropy', 230, 0.8978], [True, 2, 'entropy', 240, 0.8934], [True, 2, 'entropy', 250, 0.9198], [True, 2, 'entropy', 260, 0.9092], [True, 2, 'entropy', 270, 0.9217], [True, 2, 'entropy', 280, 0.9227], [True, 2, 'entropy', 290, 0.9322], [True, 2, 'entropy', 300, 0.939], [True, 2, 'entropy', 310, 0.931], [True, 2, 'entropy', 320, 0.941], [True, 2, 'entropy', 330, 0.9468], [True, 2, 'entropy', 340, 0.9416], [True, 2, 'entropy', 350, 0.947], [True, 2, 'entropy', 360, 0.9469], [True, 2, 'entropy', 370, 0.9395], [True, 2, 'entropy', 380, 0.9377], [True, 2, 'entropy', 390, 0.9469], [True, 2, 'entropy', 400, 0.9496], [True, 2, 'entropy', 410, 0.9433], [True, 2, 'entropy', 420, 0.9515], [True, 2, 'entropy', 430, 0.9616], [True, 2, 'entropy', 440, 0.9606], [True, 2, 'entropy', 450, 0.9599], [True, 2, 'entropy', 460, 0.9614], [True, 2, 'entropy', 470, 0.9679], [True, 2, 'entropy', 480, 0.9654], [True, 2, 'entropy', 490, 0.966], [True, 2, 'entropy', 500, 0.9659], [True, 2, 'entropy', 510, 0.9646], [True, 2, 'entropy', 520, 0.969], [True, 2, 'entropy', 530, 0.9686], [True, 2, 'entropy', 540, 0.9675], [True, 2, 'entropy', 550, 0.9694], [True, 2, 'entropy', 560, 0.9709], [True, 2, 'entropy', 570, 0.9674], [True, 2, 'entropy', 580, 0.9708], [True, 2, 'entropy', 590, 0.9725], [True, 2, 'entropy', 600, 0.9731], [True, 2, 'entropy', 610, 0.9702], [True, 2, 'entropy', 620, 0.9743], [True, 2, 'entropy', 630, 0.9765], [True, 2, 'entropy', 640, 0.9731], [True, 2, 'entropy', 650, 0.9735], [True, 2, 'entropy', 660, 0.9728], [True, 2, 'entropy', 670, 0.9772], [True, 2, 'entropy', 680, 0.9762], [True, 2, 'entropy', 690, 0.9689], [True, 2, 'entropy', 700, 0.9745], [True, 2, 'entropy', 710, 0.9773], [True, 2, 'entropy', 720, 0.9738], [True, 2, 'entropy', 730, 0.9763], [True, 2, 'entropy', 740, 0.9713], [True, 2, 'entropy', 750, 0.9698], [True, 2, 'entropy', 760, 0.9767], [True, 2, 'entropy', 770, 0.9782], [True, 2, 'entropy', 780, 0.977], [True, 2, 'entropy', 790, 0.9787], [True, 2, 'entropy', 800, 0.9765], [True, 2, 'entropy', 810, 0.9795], [True, 2, 'entropy', 820, 0.9775], [True, 2, 'entropy', 830, 0.9791], [True, 2, 'entropy', 840, 0.9786], [True, 2, 'entropy', 850, 0.9777], [True, 2, 'entropy', 860, 0.9771], [True, 2, 'entropy', 870, 0.9791], [True, 2, 'entropy', 880, 0.9737], [True, 2, 'entropy', 890, 0.9773], [True, 2, 'entropy', 900, 0.9811], [True, 2, 'entropy', 910, 0.9806], [True, 2, 'entropy', 920, 0.9811], [True, 2, 'entropy', 930, 0.9792], [True, 2, 'entropy', 940, 0.9809], [True, 2, 'entropy', 950, 0.9803], [True, 2, 'entropy', 960, 0.9778], [True, 2, 'entropy', 970, 0.9793], [True, 2, 'entropy', 980, 0.9813], [True, 2, 'entropy', 990, 0.9793], [True, 2, 'entropy', 1000, 0.9814]]
+
+[[True, 1, 'BALD', 10, 0.5961], [True, 1, 'BALD', 20, 0.6426], [True, 1, 'BALD', 30, 0.6384], [True, 1, 'BALD', 40, 0.7147], [True, 1, 'BALD', 50, 0.7226], [True, 1, 'BALD', 60, 0.7556], [True, 1, 'BALD', 70, 0.745], [True, 1, 'BALD', 80, 0.7785], [True, 1, 'BALD', 90, 0.7694], [True, 1, 'BALD', 100, 0.7581], [True, 1, 'BALD', 110, 0.7445], [True, 1, 'BALD', 120, 0.7706], [True, 1, 'BALD', 130, 0.7829], [True, 1, 'BALD', 140, 0.7851], [True, 1, 'BALD', 150, 0.7858], [True, 1, 'BALD', 160, 0.7865], [True, 1, 'BALD', 170, 0.79], [True, 1, 'BALD', 180, 0.8128], [True, 1, 'BALD', 190, 0.8052], [True, 1, 'BALD', 200, 0.8378], [True, 1, 'BALD', 210, 0.7978], [True, 1, 'BALD', 220, 0.8113], [True, 1, 'BALD', 230, 0.8058], [True, 1, 'BALD', 240, 0.81], [True, 1, 'BALD', 250, 0.8079], [True, 1, 'BALD', 260, 0.8182], [True, 1, 'BALD', 270, 0.8129], [True, 1, 'BALD', 280, 0.8164], [True, 1, 'BALD', 290, 0.8332], [True, 1, 'BALD', 300, 0.8351], [True, 1, 'BALD', 310, 0.8279], [True, 1, 'BALD', 320, 0.8411], [True, 1, 'BALD', 330, 0.8338], [True, 1, 'BALD', 340, 0.8682], [True, 1, 'BALD', 350, 0.8521], [True, 1, 'BALD', 360, 0.8475], [True, 1, 'BALD', 370, 0.8385], [True, 1, 'BALD', 380, 0.8452], [True, 1, 'BALD', 390, 0.8506], [True, 1, 'BALD', 400, 0.876], [True, 1, 'BALD', 410, 0.8686], [True, 1, 'BALD', 420, 0.8628], [True, 1, 'BALD', 430, 0.8673], [True, 1, 'BALD', 440, 0.876], [True, 1, 'BALD', 450, 0.8682], [True, 1, 'BALD', 460, 0.8619], [True, 1, 'BALD', 470, 0.8679], [True, 1, 'BALD', 480, 0.8682], [True, 1, 'BALD', 490, 0.8717], [True, 1, 'BALD', 500, 0.8797], [True, 1, 'BALD', 510, 0.874], [True, 1, 'BALD', 520, 0.8735], [True, 1, 'BALD', 530, 0.87], [True, 1, 'BALD', 540, 0.8729], [True, 1, 'BALD', 550, 0.8784], [True, 1, 'BALD', 560, 0.8798], [True, 1, 'BALD', 570, 0.8821], [True, 1, 'BALD', 580, 0.8891], [True, 1, 'BALD', 590, 0.8982], [True, 1, 'BALD', 600, 0.8909], [True, 1, 'BALD', 610, 0.8788], [True, 1, 'BALD', 620, 0.8959], [True, 1, 'BALD', 630, 0.8861], [True, 1, 'BALD', 640, 0.897], [True, 1, 'BALD', 650, 0.8988], [True, 1, 'BALD', 660, 0.8992], [True, 1, 'BALD', 670, 0.9014], [True, 1, 'BALD', 680, 0.8954], [True, 1, 'BALD', 690, 0.8968], [True, 1, 'BALD', 700, 0.9047], [True, 1, 'BALD', 710, 0.8912], [True, 1, 'BALD', 720, 0.898], [True, 1, 'BALD', 730, 0.889], [True, 1, 'BALD', 740, 0.8992], [True, 1, 'BALD', 750, 0.9096], [True, 1, 'BALD', 760, 0.91], [True, 1, 'BALD', 770, 0.9092], [True, 1, 'BALD', 780, 0.9195], [True, 1, 'BALD', 790, 0.9199], [True, 1, 'BALD', 800, 0.919], [True, 1, 'BALD', 810, 0.9148], [True, 1, 'BALD', 820, 0.9133], [True, 1, 'BALD', 830, 0.9237], [True, 1, 'BALD', 840, 0.9268], [True, 1, 'BALD', 850, 0.919], [True, 1, 'BALD', 860, 0.9231], [True, 1, 'BALD', 870, 0.9183], [True, 1, 'BALD', 880, 0.9308], [True, 1, 'BALD', 890, 0.9344], [True, 1, 'BALD', 900, 0.9291], [True, 1, 'BALD', 910, 0.9242], [True, 1, 'BALD', 920, 0.9342], [True, 1, 'BALD', 930, 0.9318], [True, 1, 'BALD', 940, 0.9272], [True, 1, 'BALD', 950, 0.9405], [True, 1, 'BALD', 960, 0.9335], [True, 1, 'BALD', 970, 0.9266], [True, 1, 'BALD', 980, 0.9364], [True, 1, 'BALD', 990, 0.9289], [True, 1, 'BALD', 1000, 0.9306]]
+
+[[True, 2, 'BALD', 10, 0.5877], [True, 2, 'BALD', 20, 0.6552], [True, 2, 'BALD', 30, 0.684], [True, 2, 'BALD', 40, 0.6959], [True, 2, 'BALD', 50, 0.7645], [True, 2, 'BALD', 60, 0.7434], [True, 2, 'BALD', 70, 0.7583], [True, 2, 'BALD', 80, 0.7608], [True, 2, 'BALD', 90, 0.7444], [True, 2, 'BALD', 100, 0.7485], [True, 2, 'BALD', 110, 0.6996], [True, 2, 'BALD', 120, 0.7523], [True, 2, 'BALD', 130, 0.761], [True, 2, 'BALD', 140, 0.8061], [True, 2, 'BALD', 150, 0.7733], [True, 2, 'BALD', 160, 0.7868], [True, 2, 'BALD', 170, 0.7895], [True, 2, 'BALD', 180, 0.8158], [True, 2, 'BALD', 190, 0.7842], [True, 2, 'BALD', 200, 0.8082], [True, 2, 'BALD', 210, 0.7896], [True, 2, 'BALD', 220, 0.7849], [True, 2, 'BALD', 230, 0.8126], [True, 2, 'BALD', 240, 0.8206], [True, 2, 'BALD', 250, 0.8044], [True, 2, 'BALD', 260, 0.8273], [True, 2, 'BALD', 270, 0.8163], [True, 2, 'BALD', 280, 0.8245], [True, 2, 'BALD', 290, 0.844], [True, 2, 'BALD', 300, 0.8276], [True, 2, 'BALD', 310, 0.8234], [True, 2, 'BALD', 320, 0.8172], [True, 2, 'BALD', 330, 0.8327], [True, 2, 'BALD', 340, 0.8453], [True, 2, 'BALD', 350, 0.8394], [True, 2, 'BALD', 360, 0.8226], [True, 2, 'BALD', 370, 0.8423], [True, 2, 'BALD', 380, 0.8462], [True, 2, 'BALD', 390, 0.8555], [True, 2, 'BALD', 400, 0.8716], [True, 2, 'BALD', 410, 0.8668], [True, 2, 'BALD', 420, 0.8699], [True, 2, 'BALD', 430, 0.8653], [True, 2, 'BALD', 440, 0.8575], [True, 2, 'BALD', 450, 0.8537], [True, 2, 'BALD', 460, 0.8722], [True, 2, 'BALD', 470, 0.8608], [True, 2, 'BALD', 480, 0.8596], [True, 2, 'BALD', 490, 0.8617], [True, 2, 'BALD', 500, 0.8888], [True, 2, 'BALD', 510, 0.8869], [True, 2, 'BALD', 520, 0.8705], [True, 2, 'BALD', 530, 0.8758], [True, 2, 'BALD', 540, 0.8979], [True, 2, 'BALD', 550, 0.873], [True, 2, 'BALD', 560, 0.8811], [True, 2, 'BALD', 570, 0.8851], [True, 2, 'BALD', 580, 0.8784], [True, 2, 'BALD', 590, 0.8913], [True, 2, 'BALD', 600, 0.8952], [True, 2, 'BALD', 610, 0.8911], [True, 2, 'BALD', 620, 0.8758], [True, 2, 'BALD', 630, 0.893], [True, 2, 'BALD', 640, 0.8897], [True, 2, 'BALD', 650, 0.8919], [True, 2, 'BALD', 660, 0.8929], [True, 2, 'BALD', 670, 0.8987], [True, 2, 'BALD', 680, 0.8991], [True, 2, 'BALD', 690, 0.9012], [True, 2, 'BALD', 700, 0.8931], [True, 2, 'BALD', 710, 0.8929], [True, 2, 'BALD', 720, 0.8935], [True, 2, 'BALD', 730, 0.8884], [True, 2, 'BALD', 740, 0.901], [True, 2, 'BALD', 750, 0.9016], [True, 2, 'BALD', 760, 0.9152], [True, 2, 'BALD', 770, 0.9076], [True, 2, 'BALD', 780, 0.9165], [True, 2, 'BALD', 790, 0.9201], [True, 2, 'BALD', 800, 0.9174], [True, 2, 'BALD', 810, 0.9219], [True, 2, 'BALD', 820, 0.9269], [True, 2, 'BALD', 830, 0.9232], [True, 2, 'BALD', 840, 0.9231], [True, 2, 'BALD', 850, 0.9219], [True, 2, 'BALD', 860, 0.9183], [True, 2, 'BALD', 870, 0.9318], [True, 2, 'BALD', 880, 0.9326], [True, 2, 'BALD', 890, 0.9346], [True, 2, 'BALD', 900, 0.9319], [True, 2, 'BALD', 910, 0.9287], [True, 2, 'BALD', 920, 0.9301], [True, 2, 'BALD', 930, 0.9311], [True, 2, 'BALD', 940, 0.9188], [True, 2, 'BALD', 950, 0.9305], [True, 2, 'BALD', 960, 0.9287], [True, 2, 'BALD', 970, 0.9368], [True, 2, 'BALD', 980, 0.9354], [True, 2, 'BALD', 990, 0.9268], [True, 2, 'BALD', 1000, 0.9328]]
+
+
+[[False, 1, 'entropy', 10, 0.5464], [False, 1, 'entropy', 20, 0.6113], [False, 1, 'entropy', 30, 0.6334], [False, 1, 'entropy', 40, 0.6335], [False, 1, 'entropy', 50, 0.6646], [False, 1, 'entropy', 60, 0.6914], [False, 1, 'entropy', 70, 0.7313], [False, 1, 'entropy', 80, 0.7564], [False, 1, 'entropy', 90, 0.7709], [False, 1, 'entropy', 100, 0.7972], [False, 1, 'entropy', 110, 0.8079], [False, 1, 'entropy', 120, 0.8406], [False, 1, 'entropy', 130, 0.8027], [False, 1, 'entropy', 140, 0.8297], [False, 1, 'entropy', 150, 0.8446], [False, 1, 'entropy', 160, 0.8368], [False, 1, 'entropy', 170, 0.861], [False, 1, 'entropy', 180, 0.8896], [False, 1, 'entropy', 190, 0.8842], [False, 1, 'entropy', 200, 0.9077], [False, 1, 'entropy', 210, 0.9028], [False, 1, 'entropy', 220, 0.8914], [False, 1, 'entropy', 230, 0.8918], [False, 1, 'entropy', 240, 0.8904], [False, 1, 'entropy', 250, 0.8871], [False, 1, 'entropy', 260, 0.904], [False, 1, 'entropy', 270, 0.9059], [False, 1, 'entropy', 280, 0.9144], [False, 1, 'entropy', 290, 0.9112], [False, 1, 'entropy', 300, 0.9209], [False, 1, 'entropy', 310, 0.9231], [False, 1, 'entropy', 320, 0.9279], [False, 1, 'entropy', 330, 0.9213], [False, 1, 'entropy', 340, 0.9258], [False, 1, 'entropy', 350, 0.9349], [False, 1, 'entropy', 360, 0.9291], [False, 1, 'entropy', 370, 0.9425], [False, 1, 'entropy', 380, 0.9381], [False, 1, 'entropy', 390, 0.9489], [False, 1, 'entropy', 400, 0.9435], [False, 1, 'entropy', 410, 0.9454], [False, 1, 'entropy', 420, 0.9514], [False, 1, 'entropy', 430, 0.9566], [False, 1, 'entropy', 440, 0.9598], [False, 1, 'entropy', 450, 0.9573], [False, 1, 'entropy', 460, 0.9512], [False, 1, 'entropy', 470, 0.9587], [False, 1, 'entropy', 480, 0.957], [False, 1, 'entropy', 490, 0.9637], [False, 1, 'entropy', 500, 0.9574], [False, 1, 'entropy', 510, 0.9593], [False, 1, 'entropy', 520, 0.9575], [False, 1, 'entropy', 530, 0.9547], [False, 1, 'entropy', 540, 0.9665], [False, 1, 'entropy', 550, 0.9531], [False, 1, 'entropy', 560, 0.9589], [False, 1, 'entropy', 570, 0.9705], [False, 1, 'entropy', 580, 0.9699], [False, 1, 'entropy', 590, 0.9712], [False, 1, 'entropy', 600, 0.9694], [False, 1, 'entropy', 610, 0.9676], [False, 1, 'entropy', 620, 0.9682], [False, 1, 'entropy', 630, 0.9658], [False, 1, 'entropy', 640, 0.9676], [False, 1, 'entropy', 650, 0.9731], [False, 1, 'entropy', 660, 0.9682], [False, 1, 'entropy', 670, 0.9742], [False, 1, 'entropy', 680, 0.9712], [False, 1, 'entropy', 690, 0.9725], [False, 1, 'entropy', 700, 0.9691], [False, 1, 'entropy', 710, 0.9737], [False, 1, 'entropy', 720, 0.97], [False, 1, 'entropy', 730, 0.9735], [False, 1, 'entropy', 740, 0.9679], [False, 1, 'entropy', 750, 0.9697], [False, 1, 'entropy', 760, 0.9727], [False, 1, 'entropy', 770, 0.9719], [False, 1, 'entropy', 780, 0.9739], [False, 1, 'entropy', 790, 0.9766], [False, 1, 'entropy', 800, 0.9768], [False, 1, 'entropy', 810, 0.9791], [False, 1, 'entropy', 820, 0.9815], [False, 1, 'entropy', 830, 0.9783], [False, 1, 'entropy', 840, 0.9784], [False, 1, 'entropy', 850, 0.976], [False, 1, 'entropy', 860, 0.9788], [False, 1, 'entropy', 870, 0.9761], [False, 1, 'entropy', 880, 0.976], [False, 1, 'entropy', 890, 0.9798], [False, 1, 'entropy', 900, 0.9782], [False, 1, 'entropy', 910, 0.9805], [False, 1, 'entropy', 920, 0.9805], [False, 1, 'entropy', 930, 0.9791], [False, 1, 'entropy', 940, 0.9808], [False, 1, 'entropy', 950, 0.9814], [False, 1, 'entropy', 960, 0.9821], [False, 1, 'entropy', 970, 0.9764], [False, 1, 'entropy', 980, 0.9791], [False, 1, 'entropy', 990, 0.9801], [False, 1, 'entropy', 1000, 0.979]]
+
+
+[[False, 2, 'entropy', 10, 0.5941], [False, 2, 'entropy', 20, 0.6688], [False, 2, 'entropy', 30, 0.7092], [False, 2, 'entropy', 40, 0.7439], [False, 2, 'entropy', 50, 0.7302], [False, 2, 'entropy', 60, 0.7389], [False, 2, 'entropy', 70, 0.7851], [False, 2, 'entropy', 80, 0.7798], [False, 2, 'entropy', 90, 0.7782], [False, 2, 'entropy', 100, 0.7893], [False, 2, 'entropy', 110, 0.763], [False, 2, 'entropy', 120, 0.8059], [False, 2, 'entropy', 130, 0.8321], [False, 2, 'entropy', 140, 0.8358], [False, 2, 'entropy', 150, 0.8515], [False, 2, 'entropy', 160, 0.8315], [False, 2, 'entropy', 170, 0.8632], [False, 2, 'entropy', 180, 0.8902], [False, 2, 'entropy', 190, 0.8507], [False, 2, 'entropy', 200, 0.873], [False, 2, 'entropy', 210, 0.9045], [False, 2, 'entropy', 220, 0.8778], [False, 2, 'entropy', 230, 0.8877], [False, 2, 'entropy', 240, 0.8673], [False, 2, 'entropy', 250, 0.9177], [False, 2, 'entropy', 260, 0.9121], [False, 2, 'entropy', 270, 0.8966], [False, 2, 'entropy', 280, 0.9076], [False, 2, 'entropy', 290, 0.9206], [False, 2, 'entropy', 300, 0.9321], [False, 2, 'entropy', 310, 0.933], [False, 2, 'entropy', 320, 0.9213], [False, 2, 'entropy', 330, 0.9295], [False, 2, 'entropy', 340, 0.9358], [False, 2, 'entropy', 350, 0.9403], [False, 2, 'entropy', 360, 0.9517], [False, 2, 'entropy', 370, 0.9485], [False, 2, 'entropy', 380, 0.9524], [False, 2, 'entropy', 390, 0.9425], [False, 2, 'entropy', 400, 0.9598], [False, 2, 'entropy', 410, 0.9567], [False, 2, 'entropy', 420, 0.9584], [False, 2, 'entropy', 430, 0.9562], [False, 2, 'entropy', 440, 0.9584], [False, 2, 'entropy', 450, 0.959], [False, 2, 'entropy', 460, 0.9476], [False, 2, 'entropy', 470, 0.9575], [False, 2, 'entropy', 480, 0.9585], [False, 2, 'entropy', 490, 0.9622], [False, 2, 'entropy', 500, 0.9564], [False, 2, 'entropy', 510, 0.9627], [False, 2, 'entropy', 520, 0.964], [False, 2, 'entropy', 530, 0.9638], [False, 2, 'entropy', 540, 0.9659], [False, 2, 'entropy', 550, 0.9616], [False, 2, 'entropy', 560, 0.9599], [False, 2, 'entropy', 570, 0.9625], [False, 2, 'entropy', 580, 0.9666], [False, 2, 'entropy', 590, 0.9648], [False, 2, 'entropy', 600, 0.965], [False, 2, 'entropy', 610, 0.9698], [False, 2, 'entropy', 620, 0.9707], [False, 2, 'entropy', 630, 0.9632], [False, 2, 'entropy', 640, 0.9653], [False, 2, 'entropy', 650, 0.966], [False, 2, 'entropy', 660, 0.9686], [False, 2, 'entropy', 670, 0.9646], [False, 2, 'entropy', 680, 0.9716], [False, 2, 'entropy', 690, 0.9731], [False, 2, 'entropy', 700, 0.9749], [False, 2, 'entropy', 710, 0.9721], [False, 2, 'entropy', 720, 0.9693], [False, 2, 'entropy', 730, 0.9747], [False, 2, 'entropy', 740, 0.9759], [False, 2, 'entropy', 750, 0.9722], [False, 2, 'entropy', 760, 0.977], [False, 2, 'entropy', 770, 0.9755], [False, 2, 'entropy', 780, 0.9756], [False, 2, 'entropy', 790, 0.9787], [False, 2, 'entropy', 800, 0.9754], [False, 2, 'entropy', 810, 0.9777], [False, 2, 'entropy', 820, 0.9785], [False, 2, 'entropy', 830, 0.9772], [False, 2, 'entropy', 840, 0.979], [False, 2, 'entropy', 850, 0.9805], [False, 2, 'entropy', 860, 0.9801], [False, 2, 'entropy', 870, 0.9783], [False, 2, 'entropy', 880, 0.9804], [False, 2, 'entropy', 890, 0.9774], [False, 2, 'entropy', 900, 0.9797], [False, 2, 'entropy', 910, 0.9745], [False, 2, 'entropy', 920, 0.9786], [False, 2, 'entropy', 930, 0.9817], [False, 2, 'entropy', 940, 0.9827], [False, 2, 'entropy', 950, 0.9778], [False, 2, 'entropy', 960, 0.9804], [False, 2, 'entropy', 970, 0.981], [False, 2, 'entropy', 980, 0.9833], [False, 2, 'entropy', 990, 0.9806], [False, 2, 'entropy', 1000, 0.9824]]
+
+[[False, 1, 'uniform', 10, 0.5887], [False, 1, 'uniform', 20, 0.6126], [False, 1, 'uniform', 30, 0.6351], [False, 1, 'uniform', 40, 0.6664], [False, 1, 'uniform', 50, 0.6937], [False, 1, 'uniform', 60, 0.7353], [False, 1, 'uniform', 70, 0.7685], [False, 1, 'uniform', 80, 0.7781], [False, 1, 'uniform', 90, 0.7592], [False, 1, 'uniform', 100, 0.7783], [False, 1, 'uniform', 110, 0.8241], [False, 1, 'uniform', 120, 0.8223], [False, 1, 'uniform', 130, 0.8247], [False, 1, 'uniform', 140, 0.843], [False, 1, 'uniform', 150, 0.8234], [False, 1, 'uniform', 160, 0.8255], [False, 1, 'uniform', 170, 0.8643], [False, 1, 'uniform', 180, 0.8756], [False, 1, 'uniform', 190, 0.8667], [False, 1, 'uniform', 200, 0.8897], [False, 1, 'uniform', 210, 0.8887], [False, 1, 'uniform', 220, 0.8792], [False, 1, 'uniform', 230, 0.8824], [False, 1, 'uniform', 240, 0.8996], [False, 1, 'uniform', 250, 0.8885], [False, 1, 'uniform', 260, 0.885], [False, 1, 'uniform', 270, 0.8888], [False, 1, 'uniform', 280, 0.898], [False, 1, 'uniform', 290, 0.912], [False, 1, 'uniform', 300, 0.9026], [False, 1, 'uniform', 310, 0.9096], [False, 1, 'uniform', 320, 0.9113], [False, 1, 'uniform', 330, 0.9201], [False, 1, 'uniform', 340, 0.9071], [False, 1, 'uniform', 350, 0.9077], [False, 1, 'uniform', 360, 0.9225], [False, 1, 'uniform', 370, 0.9172], [False, 1, 'uniform', 380, 0.9268], [False, 1, 'uniform', 390, 0.9254], [False, 1, 'uniform', 400, 0.9249], [False, 1, 'uniform', 410, 0.9212], [False, 1, 'uniform', 420, 0.9267], [False, 1, 'uniform', 430, 0.9254], [False, 1, 'uniform', 440, 0.9269], [False, 1, 'uniform', 450, 0.9269], [False, 1, 'uniform', 460, 0.9259], [False, 1, 'uniform', 470, 0.9309], [False, 1, 'uniform', 480, 0.9316], [False, 1, 'uniform', 490, 0.9346], [False, 1, 'uniform', 500, 0.9305], [False, 1, 'uniform', 510, 0.933], [False, 1, 'uniform', 520, 0.9335], [False, 1, 'uniform', 530, 0.9296], [False, 1, 'uniform', 540, 0.9386], [False, 1, 'uniform', 550, 0.937], [False, 1, 'uniform', 560, 0.9321], [False, 1, 'uniform', 570, 0.9348], [False, 1, 'uniform', 580, 0.9419], [False, 1, 'uniform', 590, 0.9385], [False, 1, 'uniform', 600, 0.9387], [False, 1, 'uniform', 610, 0.9389], [False, 1, 'uniform', 620, 0.9395], [False, 1, 'uniform', 630, 0.943], [False, 1, 'uniform', 640, 0.9446], [False, 1, 'uniform', 650, 0.9474], [False, 1, 'uniform', 660, 0.9424], [False, 1, 'uniform', 670, 0.9448], [False, 1, 'uniform', 680, 0.9457], [False, 1, 'uniform', 690, 0.9449], [False, 1, 'uniform', 700, 0.9432], [False, 1, 'uniform', 710, 0.9455], [False, 1, 'uniform', 720, 0.948], [False, 1, 'uniform', 730, 0.946], [False, 1, 'uniform', 740, 0.9491], [False, 1, 'uniform', 750, 0.951], [False, 1, 'uniform', 760, 0.9519], [False, 1, 'uniform', 770, 0.9488], [False, 1, 'uniform', 780, 0.9399], [False, 1, 'uniform', 790, 0.9523], [False, 1, 'uniform', 800, 0.953], [False, 1, 'uniform', 810, 0.9469], [False, 1, 'uniform', 820, 0.95], [False, 1, 'uniform', 830, 0.9543], [False, 1, 'uniform', 840, 0.9517], [False, 1, 'uniform', 850, 0.9547], [False, 1, 'uniform', 860, 0.9555], [False, 1, 'uniform', 870, 0.9558], [False, 1, 'uniform', 880, 0.9534], [False, 1, 'uniform', 890, 0.954], [False, 1, 'uniform', 900, 0.9545], [False, 1, 'uniform', 910, 0.9535], [False, 1, 'uniform', 920, 0.9524], [False, 1, 'uniform', 930, 0.9509], [False, 1, 'uniform', 940, 0.9565], [False, 1, 'uniform', 950, 0.9566], [False, 1, 'uniform', 960, 0.9553], [False, 1, 'uniform', 970, 0.9545], [False, 1, 'uniform', 980, 0.9564], [False, 1, 'uniform', 990, 0.9552], [False, 1, 'uniform', 1000, 0.9579]]
+
+[[False, 2, 'uniform', 10, 0.6385], [False, 2, 'uniform', 20, 0.6724], [False, 2, 'uniform', 30, 0.6817], [False, 2, 'uniform', 40, 0.7194], [False, 2, 'uniform', 50, 0.7482], [False, 2, 'uniform', 60, 0.7762], [False, 2, 'uniform', 70, 0.7936], [False, 2, 'uniform', 80, 0.8248], [False, 2, 'uniform', 90, 0.8097], [False, 2, 'uniform', 100, 0.8337], [False, 2, 'uniform', 110, 0.8481], [False, 2, 'uniform', 120, 0.8331], [False, 2, 'uniform', 130, 0.8629], [False, 2, 'uniform', 140, 0.8489], [False, 2, 'uniform', 150, 0.872], [False, 2, 'uniform', 160, 0.8719], [False, 2, 'uniform', 170, 0.8818], [False, 2, 'uniform', 180, 0.8696], [False, 2, 'uniform', 190, 0.8857], [False, 2, 'uniform', 200, 0.8893], [False, 2, 'uniform', 210, 0.8862], [False, 2, 'uniform', 220, 0.8881], [False, 2, 'uniform', 230, 0.8917], [False, 2, 'uniform', 240, 0.9062], [False, 2, 'uniform', 250, 0.9069], [False, 2, 'uniform', 260, 0.9089], [False, 2, 'uniform', 270, 0.9039], [False, 2, 'uniform', 280, 0.9051], [False, 2, 'uniform', 290, 0.9169], [False, 2, 'uniform', 300, 0.9119], [False, 2, 'uniform', 310, 0.9238], [False, 2, 'uniform', 320, 0.9216], [False, 2, 'uniform', 330, 0.9103], [False, 2, 'uniform', 340, 0.9172], [False, 2, 'uniform', 350, 0.9176], [False, 2, 'uniform', 360, 0.919], [False, 2, 'uniform', 370, 0.9283], [False, 2, 'uniform', 380, 0.9215], [False, 2, 'uniform', 390, 0.9255], [False, 2, 'uniform', 400, 0.9341], [False, 2, 'uniform', 410, 0.9253], [False, 2, 'uniform', 420, 0.9325], [False, 2, 'uniform', 430, 0.9362], [False, 2, 'uniform', 440, 0.9388], [False, 2, 'uniform', 450, 0.9318], [False, 2, 'uniform', 460, 0.9377], [False, 2, 'uniform', 470, 0.9338], [False, 2, 'uniform', 480, 0.9365], [False, 2, 'uniform', 490, 0.9284], [False, 2, 'uniform', 500, 0.9386], [False, 2, 'uniform', 510, 0.9413], [False, 2, 'uniform', 520, 0.9366], [False, 2, 'uniform', 530, 0.9362], [False, 2, 'uniform', 540, 0.9404], [False, 2, 'uniform', 550, 0.9422], [False, 2, 'uniform', 560, 0.943], [False, 2, 'uniform', 570, 0.9418], [False, 2, 'uniform', 580, 0.9475], [False, 2, 'uniform', 590, 0.9434], [False, 2, 'uniform', 600, 0.9378], [False, 2, 'uniform', 610, 0.9358], [False, 2, 'uniform', 620, 0.9467], [False, 2, 'uniform', 630, 0.9474], [False, 2, 'uniform', 640, 0.943], [False, 2, 'uniform', 650, 0.9489], [False, 2, 'uniform', 660, 0.9457], [False, 2, 'uniform', 670, 0.9425], [False, 2, 'uniform', 680, 0.9497], [False, 2, 'uniform', 690, 0.9511], [False, 2, 'uniform', 700, 0.9483], [False, 2, 'uniform', 710, 0.9534], [False, 2, 'uniform', 720, 0.9477], [False, 2, 'uniform', 730, 0.9484], [False, 2, 'uniform', 740, 0.9504], [False, 2, 'uniform', 750, 0.9533], [False, 2, 'uniform', 760, 0.9472], [False, 2, 'uniform', 770, 0.9545], [False, 2, 'uniform', 780, 0.9523], [False, 2, 'uniform', 790, 0.9533], [False, 2, 'uniform', 800, 0.9498], [False, 2, 'uniform', 810, 0.9514], [False, 2, 'uniform', 820, 0.951], [False, 2, 'uniform', 830, 0.9524], [False, 2, 'uniform', 840, 0.9506], [False, 2, 'uniform', 850, 0.953], [False, 2, 'uniform', 860, 0.9529], [False, 2, 'uniform', 870, 0.95], [False, 2, 'uniform', 880, 0.9556], [False, 2, 'uniform', 890, 0.957], [False, 2, 'uniform', 900, 0.9535], [False, 2, 'uniform', 910, 0.9497], [False, 2, 'uniform', 920, 0.9591], [False, 2, 'uniform', 930, 0.9511], [False, 2, 'uniform', 940, 0.954], [False, 2, 'uniform', 950, 0.9539], [False, 2, 'uniform', 960, 0.9565], [False, 2, 'uniform', 970, 0.9565], [False, 2, 'uniform', 980, 0.9595], [False, 2, 'uniform', 990, 0.9549], [False, 2, 'uniform', 1000, 0.9607]]
+
+[[False, 1, 'BALD', 10, 0.5835], [False, 1, 'BALD', 20, 0.6422], [False, 1, 'BALD', 30, 0.685], [False, 1, 'BALD', 40, 0.6727], [False, 1, 'BALD', 50, 0.778], [False, 1, 'BALD', 60, 0.7975], [False, 1, 'BALD', 70, 0.8113], [False, 1, 'BALD', 80, 0.8555], [False, 1, 'BALD', 90, 0.8501], [False, 1, 'BALD', 100, 0.8611], [False, 1, 'BALD', 110, 0.8192], [False, 1, 'BALD', 120, 0.8636], [False, 1, 'BALD', 130, 0.8572], [False, 1, 'BALD', 140, 0.8603], [False, 1, 'BALD', 150, 0.878], [False, 1, 'BALD', 160, 0.8651], [False, 1, 'BALD', 170, 0.8997], [False, 1, 'BALD', 180, 0.8994], [False, 1, 'BALD', 190, 0.9197], [False, 1, 'BALD', 200, 0.9195], [False, 1, 'BALD', 210, 0.9121], [False, 1, 'BALD', 220, 0.9055], [False, 1, 'BALD', 230, 0.8998], [False, 1, 'BALD', 240, 0.9091], [False, 1, 'BALD', 250, 0.9161], [False, 1, 'BALD', 260, 0.9327], [False, 1, 'BALD', 270, 0.9236], [False, 1, 'BALD', 280, 0.9394], [False, 1, 'BALD', 290, 0.9169], [False, 1, 'BALD', 300, 0.9347], [False, 1, 'BALD', 310, 0.9406], [False, 1, 'BALD', 320, 0.936], [False, 1, 'BALD', 330, 0.9321], [False, 1, 'BALD', 340, 0.9074], [False, 1, 'BALD', 350, 0.933], [False, 1, 'BALD', 360, 0.939], [False, 1, 'BALD', 370, 0.9358], [False, 1, 'BALD', 380, 0.9481], [False, 1, 'BALD', 390, 0.9432], [False, 1, 'BALD', 400, 0.9538], [False, 1, 'BALD', 410, 0.9414], [False, 1, 'BALD', 420, 0.9416], [False, 1, 'BALD', 430, 0.9524], [False, 1, 'BALD', 440, 0.9535], [False, 1, 'BALD', 450, 0.9533], [False, 1, 'BALD', 460, 0.9558], [False, 1, 'BALD', 470, 0.9609], [False, 1, 'BALD', 480, 0.9593], [False, 1, 'BALD', 490, 0.9567], [False, 1, 'BALD', 500, 0.9528], [False, 1, 'BALD', 510, 0.9605], [False, 1, 'BALD', 520, 0.9578], [False, 1, 'BALD', 530, 0.9621], [False, 1, 'BALD', 540, 0.9663], [False, 1, 'BALD', 550, 0.9598], [False, 1, 'BALD', 560, 0.9588], [False, 1, 'BALD', 570, 0.9629], [False, 1, 'BALD', 580, 0.9652], [False, 1, 'BALD', 590, 0.9662], [False, 1, 'BALD', 600, 0.9633], [False, 1, 'BALD', 610, 0.9648], [False, 1, 'BALD', 620, 0.9706], [False, 1, 'BALD', 630, 0.97], [False, 1, 'BALD', 640, 0.9684], [False, 1, 'BALD', 650, 0.9654], [False, 1, 'BALD', 660, 0.9621], [False, 1, 'BALD', 670, 0.9696], [False, 1, 'BALD', 680, 0.972], [False, 1, 'BALD', 690, 0.9741], [False, 1, 'BALD', 700, 0.9717], [False, 1, 'BALD', 710, 0.9717], [False, 1, 'BALD', 720, 0.9733], [False, 1, 'BALD', 730, 0.975], [False, 1, 'BALD', 740, 0.9753], [False, 1, 'BALD', 750, 0.9731], [False, 1, 'BALD', 760, 0.9724], [False, 1, 'BALD', 770, 0.9749], [False, 1, 'BALD', 780, 0.979], [False, 1, 'BALD', 790, 0.9742], [False, 1, 'BALD', 800, 0.9767], [False, 1, 'BALD', 810, 0.9768], [False, 1, 'BALD', 820, 0.9797], [False, 1, 'BALD', 830, 0.9756], [False, 1, 'BALD', 840, 0.9753], [False, 1, 'BALD', 850, 0.9763], [False, 1, 'BALD', 860, 0.978], [False, 1, 'BALD', 870, 0.9786], [False, 1, 'BALD', 880, 0.9783], [False, 1, 'BALD', 890, 0.9804], [False, 1, 'BALD', 900, 0.9768], [False, 1, 'BALD', 910, 0.9798], [False, 1, 'BALD', 920, 0.9754], [False, 1, 'BALD', 930, 0.9794], [False, 1, 'BALD', 940, 0.9792], [False, 1, 'BALD', 950, 0.9792], [False, 1, 'BALD', 960, 0.977], [False, 1, 'BALD', 970, 0.9791], [False, 1, 'BALD', 980, 0.9791], [False, 1, 'BALD', 990, 0.9786], [False, 1, 'BALD', 1000, 0.9795]]
+
+
+[[False, 2, 'BALD', 10, 0.552], [False, 2, 'BALD', 20, 0.5753], [False, 2, 'BALD', 30, 0.6255], [False, 2, 'BALD', 40, 0.7022], [False, 2, 'BALD', 50, 0.7031], [False, 2, 'BALD', 60, 0.7324], [False, 2, 'BALD', 70, 0.7672], [False, 2, 'BALD', 80, 0.7889], [False, 2, 'BALD', 90, 0.7837], [False, 2, 'BALD', 100, 0.8327], [False, 2, 'BALD', 110, 0.757], [False, 2, 'BALD', 120, 0.8615], [False, 2, 'BALD', 130, 0.8574], [False, 2, 'BALD', 140, 0.8225], [False, 2, 'BALD', 150, 0.8569], [False, 2, 'BALD', 160, 0.8947], [False, 2, 'BALD', 170, 0.8707], [False, 2, 'BALD', 180, 0.8916], [False, 2, 'BALD', 190, 0.8998], [False, 2, 'BALD', 200, 0.9256], [False, 2, 'BALD', 210, 0.91], [False, 2, 'BALD', 220, 0.9196], [False, 2, 'BALD', 230, 0.9252], [False, 2, 'BALD', 240, 0.9283], [False, 2, 'BALD', 250, 0.925], [False, 2, 'BALD', 260, 0.9266], [False, 2, 'BALD', 270, 0.9313], [False, 2, 'BALD', 280, 0.9391], [False, 2, 'BALD', 290, 0.9407], [False, 2, 'BALD', 300, 0.9473], [False, 2, 'BALD', 310, 0.9439], [False, 2, 'BALD', 320, 0.9477], [False, 2, 'BALD', 330, 0.9371], [False, 2, 'BALD', 340, 0.9381], [False, 2, 'BALD', 350, 0.9371], [False, 2, 'BALD', 360, 0.9403], [False, 2, 'BALD', 370, 0.9407], [False, 2, 'BALD', 380, 0.9488], [False, 2, 'BALD', 390, 0.9519], [False, 2, 'BALD', 400, 0.9429], [False, 2, 'BALD', 410, 0.9463], [False, 2, 'BALD', 420, 0.9527], [False, 2, 'BALD', 430, 0.9534], [False, 2, 'BALD', 440, 0.9487], [False, 2, 'BALD', 450, 0.9521], [False, 2, 'BALD', 460, 0.9536], [False, 2, 'BALD', 470, 0.9613], [False, 2, 'BALD', 480, 0.9533], [False, 2, 'BALD', 490, 0.9562], [False, 2, 'BALD', 500, 0.9576], [False, 2, 'BALD', 510, 0.9601], [False, 2, 'BALD', 520, 0.9556], [False, 2, 'BALD', 530, 0.9646], [False, 2, 'BALD', 540, 0.9639], [False, 2, 'BALD', 550, 0.9634], [False, 2, 'BALD', 560, 0.9653], [False, 2, 'BALD', 570, 0.9671], [False, 2, 'BALD', 580, 0.9651], [False, 2, 'BALD', 590, 0.9685], [False, 2, 'BALD', 600, 0.9684], [False, 2, 'BALD', 610, 0.9701], [False, 2, 'BALD', 620, 0.9687], [False, 2, 'BALD', 630, 0.9622], [False, 2, 'BALD', 640, 0.9707], [False, 2, 'BALD', 650, 0.9712], [False, 2, 'BALD', 660, 0.9747], [False, 2, 'BALD', 670, 0.9742], [False, 2, 'BALD', 680, 0.974], [False, 2, 'BALD', 690, 0.9729], [False, 2, 'BALD', 700, 0.9734], [False, 2, 'BALD', 710, 0.97], [False, 2, 'BALD', 720, 0.9732], [False, 2, 'BALD', 730, 0.9764], [False, 2, 'BALD', 740, 0.9719], [False, 2, 'BALD', 750, 0.9701], [False, 2, 'BALD', 760, 0.9769], [False, 2, 'BALD', 770, 0.9772], [False, 2, 'BALD', 780, 0.9768], [False, 2, 'BALD', 790, 0.973], [False, 2, 'BALD', 800, 0.9737], [False, 2, 'BALD', 810, 0.9773], [False, 2, 'BALD', 820, 0.9758], [False, 2, 'BALD', 830, 0.9753], [False, 2, 'BALD', 840, 0.9782], [False, 2, 'BALD', 850, 0.9758], [False, 2, 'BALD', 860, 0.9785], [False, 2, 'BALD', 870, 0.9759], [False, 2, 'BALD', 880, 0.9748], [False, 2, 'BALD', 890, 0.9778], [False, 2, 'BALD', 900, 0.9778], [False, 2, 'BALD', 910, 0.9782], [False, 2, 'BALD', 920, 0.9792], [False, 2, 'BALD', 930, 0.9805], [False, 2, 'BALD', 940, 0.979], [False, 2, 'BALD', 950, 0.9789], [False, 2, 'BALD', 960, 0.9797], [False, 2, 'BALD', 970, 0.9761], [False, 2, 'BALD', 980, 0.9792], [False, 2, 'BALD', 990, 0.9791], [False, 2, 'BALD', 1000, 0.98]]
+
+
+[[False, 1, 'var_rat', 10, 0.5486], [False, 1, 'var_rat', 20, 0.6123], [False, 1, 'var_rat', 30, 0.6519], [False, 1, 'var_rat', 40, 0.7148], [False, 1, 'var_rat', 50, 0.7429], [False, 1, 'var_rat', 60, 0.7823], [False, 1, 'var_rat', 70, 0.808], [False, 1, 'var_rat', 80, 0.8121], [False, 1, 'var_rat', 90, 0.821], [False, 1, 'var_rat', 100, 0.8324], [False, 1, 'var_rat', 110, 0.8374], [False, 1, 'var_rat', 120, 0.8575], [False, 1, 'var_rat', 130, 0.8774], [False, 1, 'var_rat', 140, 0.8887], [False, 1, 'var_rat', 150, 0.8929], [False, 1, 'var_rat', 160, 0.8907], [False, 1, 'var_rat', 170, 0.8947], [False, 1, 'var_rat', 180, 0.9165], [False, 1, 'var_rat', 190, 0.9151], [False, 1, 'var_rat', 200, 0.9101], [False, 1, 'var_rat', 210, 0.9154], [False, 1, 'var_rat', 220, 0.9092], [False, 1, 'var_rat', 230, 0.916], [False, 1, 'var_rat', 240, 0.916], [False, 1, 'var_rat', 250, 0.9397], [False, 1, 'var_rat', 260, 0.9193], [False, 1, 'var_rat', 270, 0.9288], [False, 1, 'var_rat', 280, 0.9263], [False, 1, 'var_rat', 290, 0.9354], [False, 1, 'var_rat', 300, 0.9296], [False, 1, 'var_rat', 310, 0.9332], [False, 1, 'var_rat', 320, 0.9411], [False, 1, 'var_rat', 330, 0.933], [False, 1, 'var_rat', 340, 0.9439], [False, 1, 'var_rat', 350, 0.9448], [False, 1, 'var_rat', 360, 0.9525], [False, 1, 'var_rat', 370, 0.9428], [False, 1, 'var_rat', 380, 0.9589], [False, 1, 'var_rat', 390, 0.9596], [False, 1, 'var_rat', 400, 0.9595], [False, 1, 'var_rat', 410, 0.9599], [False, 1, 'var_rat', 420, 0.9625], [False, 1, 'var_rat', 430, 0.9665], [False, 1, 'var_rat', 440, 0.9653], [False, 1, 'var_rat', 450, 0.9677], [False, 1, 'var_rat', 460, 0.9656], [False, 1, 'var_rat', 470, 0.9666], [False, 1, 'var_rat', 480, 0.9723], [False, 1, 'var_rat', 490, 0.9707], [False, 1, 'var_rat', 500, 0.9672], [False, 1, 'var_rat', 510, 0.9702], [False, 1, 'var_rat', 520, 0.9724], [False, 1, 'var_rat', 530, 0.9731], [False, 1, 'var_rat', 540, 0.9714], [False, 1, 'var_rat', 550, 0.9764], [False, 1, 'var_rat', 560, 0.9686], [False, 1, 'var_rat', 570, 0.9733], [False, 1, 'var_rat', 580, 0.9756], [False, 1, 'var_rat', 590, 0.9722], [False, 1, 'var_rat', 600, 0.9735], [False, 1, 'var_rat', 610, 0.9752], [False, 1, 'var_rat', 620, 0.9772], [False, 1, 'var_rat', 630, 0.9738], [False, 1, 'var_rat', 640, 0.9751], [False, 1, 'var_rat', 650, 0.9762], [False, 1, 'var_rat', 660, 0.9756], [False, 1, 'var_rat', 670, 0.9768], [False, 1, 'var_rat', 680, 0.9767], [False, 1, 'var_rat', 690, 0.9794], [False, 1, 'var_rat', 700, 0.9775], [False, 1, 'var_rat', 710, 0.9786], [False, 1, 'var_rat', 720, 0.9775], [False, 1, 'var_rat', 730, 0.9812], [False, 1, 'var_rat', 740, 0.9767], [False, 1, 'var_rat', 750, 0.9757], [False, 1, 'var_rat', 760, 0.976], [False, 1, 'var_rat', 770, 0.9795], [False, 1, 'var_rat', 780, 0.9796], [False, 1, 'var_rat', 790, 0.9752], [False, 1, 'var_rat', 800, 0.9792], [False, 1, 'var_rat', 810, 0.9808], [False, 1, 'var_rat', 820, 0.9805], [False, 1, 'var_rat', 830, 0.9792], [False, 1, 'var_rat', 840, 0.9787], [False, 1, 'var_rat', 850, 0.9804], [False, 1, 'var_rat', 860, 0.9804], [False, 1, 'var_rat', 870, 0.9805], [False, 1, 'var_rat', 880, 0.977], [False, 1, 'var_rat', 890, 0.9773], [False, 1, 'var_rat', 900, 0.9807], [False, 1, 'var_rat', 910, 0.982], [False, 1, 'var_rat', 920, 0.9783], [False, 1, 'var_rat', 930, 0.981], [False, 1, 'var_rat', 940, 0.9814], [False, 1, 'var_rat', 950, 0.9826], [False, 1, 'var_rat', 960, 0.9826], [False, 1, 'var_rat', 970, 0.9815], [False, 1, 'var_rat', 980, 0.9833], [False, 1, 'var_rat', 990, 0.9802], [False, 1, 'var_rat', 1000, 0.9831]]
+
+[[False, 2, 'var_rat', 10, 0.5672], [False, 2, 'var_rat', 20, 0.641], [False, 2, 'var_rat', 30, 0.6834], [False, 2, 'var_rat', 40, 0.6896], [False, 2, 'var_rat', 50, 0.7364], [False, 2, 'var_rat', 60, 0.7801], [False, 2, 'var_rat', 70, 0.7694], [False, 2, 'var_rat', 80, 0.7985], [False, 2, 'var_rat', 90, 0.8096], [False, 2, 'var_rat', 100, 0.8369], [False, 2, 'var_rat', 110, 0.8026], [False, 2, 'var_rat', 120, 0.8983], [False, 2, 'var_rat', 130, 0.8927], [False, 2, 'var_rat', 140, 0.8598], [False, 2, 'var_rat', 150, 0.9024], [False, 2, 'var_rat', 160, 0.873], [False, 2, 'var_rat', 170, 0.9021], [False, 2, 'var_rat', 180, 0.8795], [False, 2, 'var_rat', 190, 0.9074], [False, 2, 'var_rat', 200, 0.9209], [False, 2, 'var_rat', 210, 0.9329], [False, 2, 'var_rat', 220, 0.9316], [False, 2, 'var_rat', 230, 0.9358], [False, 2, 'var_rat', 240, 0.908], [False, 2, 'var_rat', 250, 0.9464], [False, 2, 'var_rat', 260, 0.9481], [False, 2, 'var_rat', 270, 0.9516], [False, 2, 'var_rat', 280, 0.9432], [False, 2, 'var_rat', 290, 0.949], [False, 2, 'var_rat', 300, 0.9489], [False, 2, 'var_rat', 310, 0.9588], [False, 2, 'var_rat', 320, 0.9585], [False, 2, 'var_rat', 330, 0.9602], [False, 2, 'var_rat', 340, 0.9594], [False, 2, 'var_rat', 350, 0.9605], [False, 2, 'var_rat', 360, 0.9588], [False, 2, 'var_rat', 370, 0.9507], [False, 2, 'var_rat', 380, 0.955], [False, 2, 'var_rat', 390, 0.9572], [False, 2, 'var_rat', 400, 0.9643], [False, 2, 'var_rat', 410, 0.9655], [False, 2, 'var_rat', 420, 0.9632], [False, 2, 'var_rat', 430, 0.9617], [False, 2, 'var_rat', 440, 0.9588], [False, 2, 'var_rat', 450, 0.9609], [False, 2, 'var_rat', 460, 0.965], [False, 2, 'var_rat', 470, 0.9634], [False, 2, 'var_rat', 480, 0.9711], [False, 2, 'var_rat', 490, 0.9663], [False, 2, 'var_rat', 500, 0.9682], [False, 2, 'var_rat', 510, 0.9634], [False, 2, 'var_rat', 520, 0.9722], [False, 2, 'var_rat', 530, 0.9665], [False, 2, 'var_rat', 540, 0.9709], [False, 2, 'var_rat', 550, 0.9712], [False, 2, 'var_rat', 560, 0.9753], [False, 2, 'var_rat', 570, 0.9758], [False, 2, 'var_rat', 580, 0.9734], [False, 2, 'var_rat', 590, 0.9697], [False, 2, 'var_rat', 600, 0.9753], [False, 2, 'var_rat', 610, 0.9765], [False, 2, 'var_rat', 620, 0.9733], [False, 2, 'var_rat', 630, 0.9713], [False, 2, 'var_rat', 640, 0.9756], [False, 2, 'var_rat', 650, 0.9751], [False, 2, 'var_rat', 660, 0.9781], [False, 2, 'var_rat', 670, 0.9762], [False, 2, 'var_rat', 680, 0.9785], [False, 2, 'var_rat', 690, 0.9792], [False, 2, 'var_rat', 700, 0.9789], [False, 2, 'var_rat', 710, 0.9793], [False, 2, 'var_rat', 720, 0.9787], [False, 2, 'var_rat', 730, 0.9788], [False, 2, 'var_rat', 740, 0.9797], [False, 2, 'var_rat', 750, 0.9796], [False, 2, 'var_rat', 760, 0.9795], [False, 2, 'var_rat', 770, 0.9799], [False, 2, 'var_rat', 780, 0.9814], [False, 2, 'var_rat', 790, 0.9789], [False, 2, 'var_rat', 800, 0.9768], [False, 2, 'var_rat', 810, 0.9792], [False, 2, 'var_rat', 820, 0.9803], [False, 2, 'var_rat', 830, 0.9793], [False, 2, 'var_rat', 840, 0.9795], [False, 2, 'var_rat', 850, 0.9789], [False, 2, 'var_rat', 860, 0.9793], [False, 2, 'var_rat', 870, 0.9793], [False, 2, 'var_rat', 880, 0.9788], [False, 2, 'var_rat', 890, 0.9811], [False, 2, 'var_rat', 900, 0.9797], [False, 2, 'var_rat', 910, 0.9814], [False, 2, 'var_rat', 920, 0.9805], [False, 2, 'var_rat', 930, 0.9807], [False, 2, 'var_rat', 940, 0.9839], [False, 2, 'var_rat', 950, 0.9799], [False, 2, 'var_rat', 960, 0.9812], [False, 2, 'var_rat', 970, 0.9829], [False, 2, 'var_rat', 980, 0.9815], [False, 2, 'var_rat', 990, 0.9816], [False, 2, 'var_rat', 1000, 0.9827]]
+
+[[False, 1, 'Mean_STD', 10, 0.5479], [False, 1, 'Mean_STD', 20, 0.5699], [False, 1, 'Mean_STD', 30, 0.6362], [False, 1, 'Mean_STD', 40, 0.6796], [False, 1, 'Mean_STD', 50, 0.7047], [False, 1, 'Mean_STD', 60, 0.6926], [False, 1, 'Mean_STD', 70, 0.7353], [False, 1, 'Mean_STD', 80, 0.7515], [False, 1, 'Mean_STD', 90, 0.7914], [False, 1, 'Mean_STD', 100, 0.8104], [False, 1, 'Mean_STD', 110, 0.7212], [False, 1, 'Mean_STD', 120, 0.8476], [False, 1, 'Mean_STD', 130, 0.8538], [False, 1, 'Mean_STD', 140, 0.8384], [False, 1, 'Mean_STD', 150, 0.8682], [False, 1, 'Mean_STD', 160, 0.8786], [False, 1, 'Mean_STD', 170, 0.8598], [False, 1, 'Mean_STD', 180, 0.8758], [False, 1, 'Mean_STD', 190, 0.8756], [False, 1, 'Mean_STD', 200, 0.8964], [False, 1, 'Mean_STD', 210, 0.8921], [False, 1, 'Mean_STD', 220, 0.9021], [False, 1, 'Mean_STD', 230, 0.8921], [False, 1, 'Mean_STD', 240, 0.9012], [False, 1, 'Mean_STD', 250, 0.9145], [False, 1, 'Mean_STD', 260, 0.8877], [False, 1, 'Mean_STD', 270, 0.9164], [False, 1, 'Mean_STD', 280, 0.9193], [False, 1, 'Mean_STD', 290, 0.9088], [False, 1, 'Mean_STD', 300, 0.9198], [False, 1, 'Mean_STD', 310, 0.9249], [False, 1, 'Mean_STD', 320, 0.9522], [False, 1, 'Mean_STD', 330, 0.9414], [False, 1, 'Mean_STD', 340, 0.942], [False, 1, 'Mean_STD', 350, 0.9494], [False, 1, 'Mean_STD', 360, 0.9439], [False, 1, 'Mean_STD', 370, 0.9425], [False, 1, 'Mean_STD', 380, 0.9532], [False, 1, 'Mean_STD', 390, 0.9516], [False, 1, 'Mean_STD', 400, 0.9554], [False, 1, 'Mean_STD', 410, 0.9643], [False, 1, 'Mean_STD', 420, 0.9587], [False, 1, 'Mean_STD', 430, 0.9584], [False, 1, 'Mean_STD', 440, 0.9615], [False, 1, 'Mean_STD', 450, 0.96], [False, 1, 'Mean_STD', 460, 0.9411], [False, 1, 'Mean_STD', 470, 0.9502], [False, 1, 'Mean_STD', 480, 0.9647], [False, 1, 'Mean_STD', 490, 0.9635], [False, 1, 'Mean_STD', 500, 0.9615], [False, 1, 'Mean_STD', 510, 0.9609], [False, 1, 'Mean_STD', 520, 0.9692], [False, 1, 'Mean_STD', 530, 0.968], [False, 1, 'Mean_STD', 540, 0.9663], [False, 1, 'Mean_STD', 550, 0.9694], [False, 1, 'Mean_STD', 560, 0.97], [False, 1, 'Mean_STD', 570, 0.9692], [False, 1, 'Mean_STD', 580, 0.9688], [False, 1, 'Mean_STD', 590, 0.9701], [False, 1, 'Mean_STD', 600, 0.9702], [False, 1, 'Mean_STD', 610, 0.9695], [False, 1, 'Mean_STD', 620, 0.9716], [False, 1, 'Mean_STD', 630, 0.9682], [False, 1, 'Mean_STD', 640, 0.9743], [False, 1, 'Mean_STD', 650, 0.9725], [False, 1, 'Mean_STD', 660, 0.973], [False, 1, 'Mean_STD', 670, 0.9735], [False, 1, 'Mean_STD', 680, 0.9743], [False, 1, 'Mean_STD', 690, 0.9739], [False, 1, 'Mean_STD', 700, 0.9749], [False, 1, 'Mean_STD', 710, 0.9764], [False, 1, 'Mean_STD', 720, 0.9762], [False, 1, 'Mean_STD', 730, 0.9736], [False, 1, 'Mean_STD', 740, 0.9763], [False, 1, 'Mean_STD', 750, 0.9748], [False, 1, 'Mean_STD', 760, 0.9744], [False, 1, 'Mean_STD', 770, 0.9797], [False, 1, 'Mean_STD', 780, 0.9764], [False, 1, 'Mean_STD', 790, 0.9789], [False, 1, 'Mean_STD', 800, 0.9726], [False, 1, 'Mean_STD', 810, 0.9757], [False, 1, 'Mean_STD', 820, 0.9756], [False, 1, 'Mean_STD', 830, 0.9763], [False, 1, 'Mean_STD', 840, 0.9814], [False, 1, 'Mean_STD', 850, 0.9801], [False, 1, 'Mean_STD', 860, 0.9803], [False, 1, 'Mean_STD', 870, 0.9809], [False, 1, 'Mean_STD', 880, 0.9788], [False, 1, 'Mean_STD', 890, 0.9777], [False, 1, 'Mean_STD', 900, 0.98], [False, 1, 'Mean_STD', 910, 0.9816], [False, 1, 'Mean_STD', 920, 0.9782], [False, 1, 'Mean_STD', 930, 0.981], [False, 1, 'Mean_STD', 940, 0.9794], [False, 1, 'Mean_STD', 950, 0.979], [False, 1, 'Mean_STD', 960, 0.9812], [False, 1, 'Mean_STD', 970, 0.9816], [False, 1, 'Mean_STD', 980, 0.9817], [False, 1, 'Mean_STD', 990, 0.9827], [False, 1, 'Mean_STD', 1000, 0.9812]]
+
+[[False, 2, 'Mean_STD', 10, 0.5952], [False, 2, 'Mean_STD', 20, 0.5788], [False, 2, 'Mean_STD', 30, 0.6637], [False, 2, 'Mean_STD', 40, 0.7225], [False, 2, 'Mean_STD', 50, 0.7828], [False, 2, 'Mean_STD', 60, 0.7756], [False, 2, 'Mean_STD', 70, 0.8297], [False, 2, 'Mean_STD', 80, 0.8168], [False, 2, 'Mean_STD', 90, 0.8513], [False, 2, 'Mean_STD', 100, 0.8693], [False, 2, 'Mean_STD', 110, 0.8555], [False, 2, 'Mean_STD', 120, 0.872], [False, 2, 'Mean_STD', 130, 0.8942], [False, 2, 'Mean_STD', 140, 0.8728], [False, 2, 'Mean_STD', 150, 0.8836], [False, 2, 'Mean_STD', 160, 0.8689], [False, 2, 'Mean_STD', 170, 0.8915], [False, 2, 'Mean_STD', 180, 0.8762], [False, 2, 'Mean_STD', 190, 0.8976], [False, 2, 'Mean_STD', 200, 0.8963], [False, 2, 'Mean_STD', 210, 0.8999], [False, 2, 'Mean_STD', 220, 0.9052], [False, 2, 'Mean_STD', 230, 0.9081], [False, 2, 'Mean_STD', 240, 0.8941], [False, 2, 'Mean_STD', 250, 0.9151], [False, 2, 'Mean_STD', 260, 0.9169], [False, 2, 'Mean_STD', 270, 0.9261], [False, 2, 'Mean_STD', 280, 0.9358], [False, 2, 'Mean_STD', 290, 0.9348], [False, 2, 'Mean_STD', 300, 0.9278], [False, 2, 'Mean_STD', 310, 0.9249], [False, 2, 'Mean_STD', 320, 0.9379], [False, 2, 'Mean_STD', 330, 0.9491], [False, 2, 'Mean_STD', 340, 0.9493], [False, 2, 'Mean_STD', 350, 0.9534], [False, 2, 'Mean_STD', 360, 0.9517], [False, 2, 'Mean_STD', 370, 0.9524], [False, 2, 'Mean_STD', 380, 0.9449], [False, 2, 'Mean_STD', 390, 0.9534], [False, 2, 'Mean_STD', 400, 0.9575], [False, 2, 'Mean_STD', 410, 0.9595], [False, 2, 'Mean_STD', 420, 0.9566], [False, 2, 'Mean_STD', 430, 0.956], [False, 2, 'Mean_STD', 440, 0.9607], [False, 2, 'Mean_STD', 450, 0.9586], [False, 2, 'Mean_STD', 460, 0.9625], [False, 2, 'Mean_STD', 470, 0.968], [False, 2, 'Mean_STD', 480, 0.9655], [False, 2, 'Mean_STD', 490, 0.9654], [False, 2, 'Mean_STD', 500, 0.9614], [False, 2, 'Mean_STD', 510, 0.9655], [False, 2, 'Mean_STD', 520, 0.9703], [False, 2, 'Mean_STD', 530, 0.9703], [False, 2, 'Mean_STD', 540, 0.9731], [False, 2, 'Mean_STD', 550, 0.9699], [False, 2, 'Mean_STD', 560, 0.971], [False, 2, 'Mean_STD', 570, 0.976], [False, 2, 'Mean_STD', 580, 0.971], [False, 2, 'Mean_STD', 590, 0.9715], [False, 2, 'Mean_STD', 600, 0.9717], [False, 2, 'Mean_STD', 610, 0.9709], [False, 2, 'Mean_STD', 620, 0.9723], [False, 2, 'Mean_STD', 630, 0.9643], [False, 2, 'Mean_STD', 640, 0.9734], [False, 2, 'Mean_STD', 650, 0.9751], [False, 2, 'Mean_STD', 660, 0.9744], [False, 2, 'Mean_STD', 670, 0.9725], [False, 2, 'Mean_STD', 680, 0.9756], [False, 2, 'Mean_STD', 690, 0.9748], [False, 2, 'Mean_STD', 700, 0.9748], [False, 2, 'Mean_STD', 710, 0.9786], [False, 2, 'Mean_STD', 720, 0.9721], [False, 2, 'Mean_STD', 730, 0.9728], [False, 2, 'Mean_STD', 740, 0.9742], [False, 2, 'Mean_STD', 750, 0.9625], [False, 2, 'Mean_STD', 760, 0.9784], [False, 2, 'Mean_STD', 770, 0.9762], [False, 2, 'Mean_STD', 780, 0.9787], [False, 2, 'Mean_STD', 790, 0.9773], [False, 2, 'Mean_STD', 800, 0.9798], [False, 2, 'Mean_STD', 810, 0.9783], [False, 2, 'Mean_STD', 820, 0.981], [False, 2, 'Mean_STD', 830, 0.98], [False, 2, 'Mean_STD', 840, 0.9803], [False, 2, 'Mean_STD', 850, 0.9796], [False, 2, 'Mean_STD', 860, 0.9769], [False, 2, 'Mean_STD', 870, 0.9801], [False, 2, 'Mean_STD', 880, 0.979], [False, 2, 'Mean_STD', 890, 0.9808], [False, 2, 'Mean_STD', 900, 0.9813], [False, 2, 'Mean_STD', 910, 0.9823], [False, 2, 'Mean_STD', 920, 0.9818], [False, 2, 'Mean_STD', 930, 0.9813], [False, 2, 'Mean_STD', 940, 0.981], [False, 2, 'Mean_STD', 950, 0.9818], [False, 2, 'Mean_STD', 960, 0.9819], [False, 2, 'Mean_STD', 970, 0.9788], [False, 2, 'Mean_STD', 980, 0.9822], [False, 2, 'Mean_STD', 990, 0.9849], [False, 2, 'Mean_STD', 1000, 0.9825]]
+
+[[True, 0, 'Mean_STD', 10, 0.6043], [True, 0, 'Mean_STD', 20, 0.6608], [True, 0, 'Mean_STD', 30, 0.7045], [True, 0, 'Mean_STD', 40, 0.7275], [True, 0, 'Mean_STD', 50, 0.7476], [True, 0, 'Mean_STD', 60, 0.7504], [True, 0, 'Mean_STD', 70, 0.7757], [True, 0, 'Mean_STD', 80, 0.7759], [True, 0, 'Mean_STD', 90, 0.7796], [True, 0, 'Mean_STD', 100, 0.7679], [True, 0, 'Mean_STD', 110, 0.771], [True, 0, 'Mean_STD', 120, 0.7706], [True, 0, 'Mean_STD', 130, 0.7695], [True, 0, 'Mean_STD', 140, 0.8], [True, 0, 'Mean_STD', 150, 0.798], [True, 0, 'Mean_STD', 160, 0.7872], [True, 0, 'Mean_STD', 170, 0.7956], [True, 0, 'Mean_STD', 180, 0.8059], [True, 0, 'Mean_STD', 190, 0.807], [True, 0, 'Mean_STD', 200, 0.812], [True, 0, 'Mean_STD', 210, 0.8097], [True, 0, 'Mean_STD', 220, 0.8126], [True, 0, 'Mean_STD', 230, 0.8264], [True, 0, 'Mean_STD', 240, 0.8253], [True, 0, 'Mean_STD', 250, 0.8205], [True, 0, 'Mean_STD', 260, 0.846], [True, 0, 'Mean_STD', 270, 0.82], [True, 0, 'Mean_STD', 280, 0.8217], [True, 0, 'Mean_STD', 290, 0.8523], [True, 0, 'Mean_STD', 300, 0.8478], [True, 0, 'Mean_STD', 310, 0.8409], [True, 0, 'Mean_STD', 320, 0.8501], [True, 0, 'Mean_STD', 330, 0.8525], [True, 0, 'Mean_STD', 340, 0.8587], [True, 0, 'Mean_STD', 350, 0.8298], [True, 0, 'Mean_STD', 360, 0.8481], [True, 0, 'Mean_STD', 370, 0.8466], [True, 0, 'Mean_STD', 380, 0.8466], [True, 0, 'Mean_STD', 390, 0.8511], [True, 0, 'Mean_STD', 400, 0.8747], [True, 0, 'Mean_STD', 410, 0.8642], [True, 0, 'Mean_STD', 420, 0.8726], [True, 0, 'Mean_STD', 430, 0.8546], [True, 0, 'Mean_STD', 440, 0.8783], [True, 0, 'Mean_STD', 450, 0.8729], [True, 0, 'Mean_STD', 460, 0.8612], [True, 0, 'Mean_STD', 470, 0.8499], [True, 0, 'Mean_STD', 480, 0.8845], [True, 0, 'Mean_STD', 490, 0.8716], [True, 0, 'Mean_STD', 500, 0.8815], [True, 0, 'Mean_STD', 510, 0.8736], [True, 0, 'Mean_STD', 520, 0.853], [True, 0, 'Mean_STD', 530, 0.8832], [True, 0, 'Mean_STD', 540, 0.8923], [True, 0, 'Mean_STD', 550, 0.8745], [True, 0, 'Mean_STD', 560, 0.8671], [True, 0, 'Mean_STD', 570, 0.8781], [True, 0, 'Mean_STD', 580, 0.8913], [True, 0, 'Mean_STD', 590, 0.8862], [True, 0, 'Mean_STD', 600, 0.8817], [True, 0, 'Mean_STD', 610, 0.8977], [True, 0, 'Mean_STD', 620, 0.8801], [True, 0, 'Mean_STD', 630, 0.8806], [True, 0, 'Mean_STD', 640, 0.8848], [True, 0, 'Mean_STD', 650, 0.8919], [True, 0, 'Mean_STD', 660, 0.8905], [True, 0, 'Mean_STD', 670, 0.8867], [True, 0, 'Mean_STD', 680, 0.8927], [True, 0, 'Mean_STD', 690, 0.8831], [True, 0, 'Mean_STD', 700, 0.8968], [True, 0, 'Mean_STD', 710, 0.8939], [True, 0, 'Mean_STD', 720, 0.8855], [True, 0, 'Mean_STD', 730, 0.9129], [True, 0, 'Mean_STD', 740, 0.9023], [True, 0, 'Mean_STD', 750, 0.897], [True, 0, 'Mean_STD', 760, 0.911], [True, 0, 'Mean_STD', 770, 0.9066], [True, 0, 'Mean_STD', 780, 0.9172], [True, 0, 'Mean_STD', 790, 0.9259], [True, 0, 'Mean_STD', 800, 0.9117], [True, 0, 'Mean_STD', 810, 0.9177], [True, 0, 'Mean_STD', 820, 0.9236], [True, 0, 'Mean_STD', 830, 0.9181], [True, 0, 'Mean_STD', 840, 0.9144], [True, 0, 'Mean_STD', 850, 0.9283], [True, 0, 'Mean_STD', 860, 0.93], [True, 0, 'Mean_STD', 870, 0.9205], [True, 0, 'Mean_STD', 880, 0.9301], [True, 0, 'Mean_STD', 890, 0.932], [True, 0, 'Mean_STD', 900, 0.9223], [True, 0, 'Mean_STD', 910, 0.9274], [True, 0, 'Mean_STD', 920, 0.9333], [True, 0, 'Mean_STD', 930, 0.9293], [True, 0, 'Mean_STD', 940, 0.9273], [True, 0, 'Mean_STD', 950, 0.9263], [True, 0, 'Mean_STD', 960, 0.9234], [True, 0, 'Mean_STD', 970, 0.9316], [True, 0, 'Mean_STD', 980, 0.9348], [True, 0, 'Mean_STD', 990, 0.9302], [True, 0, 'Mean_STD', 1000, 0.927]]
+
+[[True, 1, 'Mean_STD', 10, 0.6187], [True, 1, 'Mean_STD', 20, 0.6449], [True, 1, 'Mean_STD', 30, 0.6876], [True, 1, 'Mean_STD', 40, 0.7454], [True, 1, 'Mean_STD', 50, 0.7862], [True, 1, 'Mean_STD', 60, 0.7611], [True, 1, 'Mean_STD', 70, 0.7748], [True, 1, 'Mean_STD', 80, 0.7774], [True, 1, 'Mean_STD', 90, 0.7783], [True, 1, 'Mean_STD', 100, 0.7679], [True, 1, 'Mean_STD', 110, 0.8115], [True, 1, 'Mean_STD', 120, 0.8068], [True, 1, 'Mean_STD', 130, 0.7832], [True, 1, 'Mean_STD', 140, 0.8161], [True, 1, 'Mean_STD', 150, 0.788], [True, 1, 'Mean_STD', 160, 0.7992], [True, 1, 'Mean_STD', 170, 0.8015], [True, 1, 'Mean_STD', 180, 0.8244], [True, 1, 'Mean_STD', 190, 0.8065], [True, 1, 'Mean_STD', 200, 0.8028], [True, 1, 'Mean_STD', 210, 0.819], [True, 1, 'Mean_STD', 220, 0.8119], [True, 1, 'Mean_STD', 230, 0.8242], [True, 1, 'Mean_STD', 240, 0.8145], [True, 1, 'Mean_STD', 250, 0.828], [True, 1, 'Mean_STD', 260, 0.8209], [True, 1, 'Mean_STD', 270, 0.813], [True, 1, 'Mean_STD', 280, 0.8435], [True, 1, 'Mean_STD', 290, 0.839], [True, 1, 'Mean_STD', 300, 0.8594], [True, 1, 'Mean_STD', 310, 0.8237], [True, 1, 'Mean_STD', 320, 0.8285], [True, 1, 'Mean_STD', 330, 0.8464], [True, 1, 'Mean_STD', 340, 0.8609], [True, 1, 'Mean_STD', 350, 0.8549], [True, 1, 'Mean_STD', 360, 0.8391], [True, 1, 'Mean_STD', 370, 0.8534], [True, 1, 'Mean_STD', 380, 0.8581], [True, 1, 'Mean_STD', 390, 0.8606], [True, 1, 'Mean_STD', 400, 0.8645], [True, 1, 'Mean_STD', 410, 0.8528], [True, 1, 'Mean_STD', 420, 0.8654], [True, 1, 'Mean_STD', 430, 0.8736], [True, 1, 'Mean_STD', 440, 0.8726], [True, 1, 'Mean_STD', 450, 0.8563], [True, 1, 'Mean_STD', 460, 0.8539], [True, 1, 'Mean_STD', 470, 0.864], [True, 1, 'Mean_STD', 480, 0.8586], [True, 1, 'Mean_STD', 490, 0.8615], [True, 1, 'Mean_STD', 500, 0.8819], [True, 1, 'Mean_STD', 510, 0.8754], [True, 1, 'Mean_STD', 520, 0.8903], [True, 1, 'Mean_STD', 530, 0.8764], [True, 1, 'Mean_STD', 540, 0.8808], [True, 1, 'Mean_STD', 550, 0.8787], [True, 1, 'Mean_STD', 560, 0.8781], [True, 1, 'Mean_STD', 570, 0.8792], [True, 1, 'Mean_STD', 580, 0.8874], [True, 1, 'Mean_STD', 590, 0.8813], [True, 1, 'Mean_STD', 600, 0.8892], [True, 1, 'Mean_STD', 610, 0.8682], [True, 1, 'Mean_STD', 620, 0.8978], [True, 1, 'Mean_STD', 630, 0.8906], [True, 1, 'Mean_STD', 640, 0.8861], [True, 1, 'Mean_STD', 650, 0.8905], [True, 1, 'Mean_STD', 660, 0.8978], [True, 1, 'Mean_STD', 670, 0.8799], [True, 1, 'Mean_STD', 680, 0.8873], [True, 1, 'Mean_STD', 690, 0.8828], [True, 1, 'Mean_STD', 700, 0.8738], [True, 1, 'Mean_STD', 710, 0.897], [True, 1, 'Mean_STD', 720, 0.8839], [True, 1, 'Mean_STD', 730, 0.8989], [True, 1, 'Mean_STD', 740, 0.9079], [True, 1, 'Mean_STD', 750, 0.9138], [True, 1, 'Mean_STD', 760, 0.9147], [True, 1, 'Mean_STD', 770, 0.9045], [True, 1, 'Mean_STD', 780, 0.909], [True, 1, 'Mean_STD', 790, 0.9152], [True, 1, 'Mean_STD', 800, 0.9158], [True, 1, 'Mean_STD', 810, 0.9134], [True, 1, 'Mean_STD', 820, 0.9088], [True, 1, 'Mean_STD', 830, 0.9281], [True, 1, 'Mean_STD', 840, 0.9282], [True, 1, 'Mean_STD', 850, 0.9232], [True, 1, 'Mean_STD', 860, 0.9231], [True, 1, 'Mean_STD', 870, 0.9235], [True, 1, 'Mean_STD', 880, 0.9202], [True, 1, 'Mean_STD', 890, 0.9215], [True, 1, 'Mean_STD', 900, 0.9302], [True, 1, 'Mean_STD', 910, 0.9322], [True, 1, 'Mean_STD', 920, 0.9293], [True, 1, 'Mean_STD', 930, 0.9303], [True, 1, 'Mean_STD', 940, 0.9296], [True, 1, 'Mean_STD', 950, 0.9328], [True, 1, 'Mean_STD', 960, 0.9266], [True, 1, 'Mean_STD', 970, 0.9331], [True, 1, 'Mean_STD', 980, 0.9345], [True, 1, 'Mean_STD', 990, 0.9363], [True, 1, 'Mean_STD', 1000, 0.9317]]
+
+[[True, 2, 'Mean_STD', 10, 0.6548], [True, 2, 'Mean_STD', 20, 0.6821], [True, 2, 'Mean_STD', 30, 0.7053], [True, 2, 'Mean_STD', 40, 0.7268], [True, 2, 'Mean_STD', 50, 0.7422], [True, 2, 'Mean_STD', 60, 0.7742], [True, 2, 'Mean_STD', 70, 0.7232], [True, 2, 'Mean_STD', 80, 0.7722], [True, 2, 'Mean_STD', 90, 0.7729], [True, 2, 'Mean_STD', 100, 0.7735], [True, 2, 'Mean_STD', 110, 0.7864], [True, 2, 'Mean_STD', 120, 0.7765], [True, 2, 'Mean_STD', 130, 0.7601], [True, 2, 'Mean_STD', 140, 0.7801], [True, 2, 'Mean_STD', 150, 0.8072], [True, 2, 'Mean_STD', 160, 0.7861], [True, 2, 'Mean_STD', 170, 0.8223], [True, 2, 'Mean_STD', 180, 0.8138], [True, 2, 'Mean_STD', 190, 0.8164], [True, 2, 'Mean_STD', 200, 0.8195], [True, 2, 'Mean_STD', 210, 0.8344], [True, 2, 'Mean_STD', 220, 0.8113], [True, 2, 'Mean_STD', 230, 0.8171], [True, 2, 'Mean_STD', 240, 0.7966], [True, 2, 'Mean_STD', 250, 0.815], [True, 2, 'Mean_STD', 260, 0.8368], [True, 2, 'Mean_STD', 270, 0.8372], [True, 2, 'Mean_STD', 280, 0.8417], [True, 2, 'Mean_STD', 290, 0.8321], [True, 2, 'Mean_STD', 300, 0.8508], [True, 2, 'Mean_STD', 310, 0.8347], [True, 2, 'Mean_STD', 320, 0.8377], [True, 2, 'Mean_STD', 330, 0.8609], [True, 2, 'Mean_STD', 340, 0.8633], [True, 2, 'Mean_STD', 350, 0.8659], [True, 2, 'Mean_STD', 360, 0.8452], [True, 2, 'Mean_STD', 370, 0.8367], [True, 2, 'Mean_STD', 380, 0.8325], [True, 2, 'Mean_STD', 390, 0.8562], [True, 2, 'Mean_STD', 400, 0.8647], [True, 2, 'Mean_STD', 410, 0.8544], [True, 2, 'Mean_STD', 420, 0.8706], [True, 2, 'Mean_STD', 430, 0.8581], [True, 2, 'Mean_STD', 440, 0.8686], [True, 2, 'Mean_STD', 450, 0.8588], [True, 2, 'Mean_STD', 460, 0.8676], [True, 2, 'Mean_STD', 470, 0.8683], [True, 2, 'Mean_STD', 480, 0.8832], [True, 2, 'Mean_STD', 490, 0.8559], [True, 2, 'Mean_STD', 500, 0.8655], [True, 2, 'Mean_STD', 510, 0.8694], [True, 2, 'Mean_STD', 520, 0.8797], [True, 2, 'Mean_STD', 530, 0.8779], [True, 2, 'Mean_STD', 540, 0.8862], [True, 2, 'Mean_STD', 550, 0.8702], [True, 2, 'Mean_STD', 560, 0.8743], [True, 2, 'Mean_STD', 570, 0.8838], [True, 2, 'Mean_STD', 580, 0.8844], [True, 2, 'Mean_STD', 590, 0.8895], [True, 2, 'Mean_STD', 600, 0.8848], [True, 2, 'Mean_STD', 610, 0.8725], [True, 2, 'Mean_STD', 620, 0.8846], [True, 2, 'Mean_STD', 630, 0.8878], [True, 2, 'Mean_STD', 640, 0.8836], [True, 2, 'Mean_STD', 650, 0.8799], [True, 2, 'Mean_STD', 660, 0.8903], [True, 2, 'Mean_STD', 670, 0.882], [True, 2, 'Mean_STD', 680, 0.891], [True, 2, 'Mean_STD', 690, 0.8902], [True, 2, 'Mean_STD', 700, 0.8931], [True, 2, 'Mean_STD', 710, 0.8887], [True, 2, 'Mean_STD', 720, 0.8976], [True, 2, 'Mean_STD', 730, 0.8955], [True, 2, 'Mean_STD', 740, 0.8987], [True, 2, 'Mean_STD', 750, 0.9065], [True, 2, 'Mean_STD', 760, 0.9074], [True, 2, 'Mean_STD', 770, 0.9119], [True, 2, 'Mean_STD', 780, 0.9065], [True, 2, 'Mean_STD', 790, 0.9165], [True, 2, 'Mean_STD', 800, 0.9154], [True, 2, 'Mean_STD', 810, 0.9237], [True, 2, 'Mean_STD', 820, 0.9186], [True, 2, 'Mean_STD', 830, 0.9221], [True, 2, 'Mean_STD', 840, 0.9166], [True, 2, 'Mean_STD', 850, 0.928], [True, 2, 'Mean_STD', 860, 0.9232], [True, 2, 'Mean_STD', 870, 0.9314], [True, 2, 'Mean_STD', 880, 0.9269], [True, 2, 'Mean_STD', 890, 0.9266], [True, 2, 'Mean_STD', 900, 0.9225], [True, 2, 'Mean_STD', 910, 0.9237], [True, 2, 'Mean_STD', 920, 0.9129], [True, 2, 'Mean_STD', 930, 0.9256], [True, 2, 'Mean_STD', 940, 0.939], [True, 2, 'Mean_STD', 950, 0.931], [True, 2, 'Mean_STD', 960, 0.927], [True, 2, 'Mean_STD', 970, 0.9254], [True, 2, 'Mean_STD', 980, 0.9361], [True, 2, 'Mean_STD', 990, 0.925], [True, 2, 'Mean_STD', 1000, 0.9277]]
+
+
+
+Opt wd: 0.0001
+313it [00:07, 42.48it/s]
+Base model test accuracy: 0.5126
+Calulating uncertainty scores using: mean_change, acq_step: 10
+313it [00:07, 41.97it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 10 is 0.6051
+Calulating uncertainty scores using: mean_change, acq_step: 20
+313it [00:07, 41.59it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 20 is 0.6657
+Calulating uncertainty scores using: mean_change, acq_step: 30
+313it [00:07, 41.89it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 30 is 0.6375
+Calulating uncertainty scores using: mean_change, acq_step: 40
+313it [00:07, 41.28it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 40 is 0.6185
+Calulating uncertainty scores using: mean_change, acq_step: 50
+313it [00:07, 42.08it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 50 is 0.6598
+Calulating uncertainty scores using: mean_change, acq_step: 60
+313it [00:07, 42.73it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 60 is 0.6994
+Calulating uncertainty scores using: mean_change, acq_step: 70
+313it [00:07, 42.44it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 70 is 0.6934
+Calulating uncertainty scores using: mean_change, acq_step: 80
+313it [00:07, 42.50it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 80 is 0.6744
+Calulating uncertainty scores using: mean_change, acq_step: 90
+313it [00:07, 42.53it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 90 is 0.701
+Calulating uncertainty scores using: mean_change, acq_step: 100
+313it [00:07, 42.61it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 100 is 0.728
+Calulating uncertainty scores using: mean_change, acq_step: 110
+313it [00:07, 42.69it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 110 is 0.7444
+Calulating uncertainty scores using: mean_change, acq_step: 120
+313it [00:07, 42.74it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 120 is 0.7379
+Calulating uncertainty scores using: mean_change, acq_step: 130
+313it [00:07, 42.61it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 130 is 0.7579
+Calulating uncertainty scores using: mean_change, acq_step: 140
+313it [00:07, 42.70it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 140 is 0.7572
+Calulating uncertainty scores using: mean_change, acq_step: 150
+313it [00:07, 42.66it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 150 is 0.7498
+Calulating uncertainty scores using: mean_change, acq_step: 160
+313it [00:07, 42.62it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 160 is 0.7684
+Calulating uncertainty scores using: mean_change, acq_step: 170
+313it [00:07, 42.72it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 170 is 0.8127
+Calulating uncertainty scores using: mean_change, acq_step: 180
+313it [00:07, 42.71it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 180 is 0.7869
+Calulating uncertainty scores using: mean_change, acq_step: 190
+313it [00:07, 42.56it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 190 is 0.8214
+Calulating uncertainty scores using: mean_change, acq_step: 200
+313it [00:07, 42.69it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 200 is 0.8286
+Calulating uncertainty scores using: mean_change, acq_step: 210
+313it [00:07, 42.44it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 210 is 0.8416
+Calulating uncertainty scores using: mean_change, acq_step: 220
+313it [00:07, 42.55it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 220 is 0.8383
+Calulating uncertainty scores using: mean_change, acq_step: 230
+313it [00:07, 41.93it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 230 is 0.8258
+Calulating uncertainty scores using: mean_change, acq_step: 240
+313it [00:07, 42.63it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 240 is 0.8106
+Calulating uncertainty scores using: mean_change, acq_step: 250
+313it [00:07, 42.56it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 250 is 0.8392
+Calulating uncertainty scores using: mean_change, acq_step: 260
+313it [00:07, 42.61it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 260 is 0.8397
+Calulating uncertainty scores using: mean_change, acq_step: 270
+313it [00:07, 42.61it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 270 is 0.8663
+Calulating uncertainty scores using: mean_change, acq_step: 280
+313it [00:07, 42.69it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 280 is 0.8786
+Calulating uncertainty scores using: mean_change, acq_step: 290
+313it [00:07, 42.55it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 290 is 0.8946
+Calulating uncertainty scores using: mean_change, acq_step: 300
+313it [00:07, 42.56it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 300 is 0.8794
+Calulating uncertainty scores using: mean_change, acq_step: 310
+313it [00:07, 42.61it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 310 is 0.8756
+Calulating uncertainty scores using: mean_change, acq_step: 320
+313it [00:07, 42.59it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 320 is 0.9051
+Calulating uncertainty scores using: mean_change, acq_step: 330
+313it [00:07, 42.64it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 330 is 0.8989
+Calulating uncertainty scores using: mean_change, acq_step: 340
+313it [00:07, 42.94it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 340 is 0.9135
+Calulating uncertainty scores using: mean_change, acq_step: 350
+313it [00:07, 42.89it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 350 is 0.9214
+Calulating uncertainty scores using: mean_change, acq_step: 360
+313it [00:07, 43.02it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 360 is 0.9178
+Calulating uncertainty scores using: mean_change, acq_step: 370
+313it [00:07, 43.07it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 370 is 0.9144
+Calulating uncertainty scores using: mean_change, acq_step: 380
+313it [00:07, 43.09it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 380 is 0.945
+Calulating uncertainty scores using: mean_change, acq_step: 390
+313it [00:07, 41.97it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 390 is 0.9384
+Calulating uncertainty scores using: mean_change, acq_step: 400
+313it [00:07, 41.75it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 400 is 0.9345
+Calulating uncertainty scores using: mean_change, acq_step: 410
+313it [00:07, 42.22it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 410 is 0.9282
+Calulating uncertainty scores using: mean_change, acq_step: 420
+313it [00:07, 42.41it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 420 is 0.9291
+Calulating uncertainty scores using: mean_change, acq_step: 430
+313it [00:07, 42.32it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 430 is 0.9318
+Calulating uncertainty scores using: mean_change, acq_step: 440
+313it [00:07, 42.37it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 440 is 0.9169
+Calulating uncertainty scores using: mean_change, acq_step: 450
+313it [00:07, 42.19it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 450 is 0.937
+Calulating uncertainty scores using: mean_change, acq_step: 460
+313it [00:07, 41.79it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 460 is 0.9186
+Calulating uncertainty scores using: mean_change, acq_step: 470
+313it [00:07, 42.28it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 470 is 0.9476
+Calulating uncertainty scores using: mean_change, acq_step: 480
+313it [00:07, 42.43it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 480 is 0.9495
+Calulating uncertainty scores using: mean_change, acq_step: 490
+313it [00:07, 42.55it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 490 is 0.9439
+Calulating uncertainty scores using: mean_change, acq_step: 500
+313it [00:07, 42.05it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 500 is 0.9521
+Calulating uncertainty scores using: mean_change, acq_step: 510
+313it [00:07, 41.44it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 510 is 0.9502
+Calulating uncertainty scores using: mean_change, acq_step: 520
+313it [00:07, 41.37it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 520 is 0.9324
+Calulating uncertainty scores using: mean_change, acq_step: 530
+313it [00:07, 41.48it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 530 is 0.9518
+Calulating uncertainty scores using: mean_change, acq_step: 540
+313it [00:07, 41.29it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 540 is 0.9555
+Calulating uncertainty scores using: mean_change, acq_step: 550
+313it [00:07, 42.66it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 550 is 0.9485
+Calulating uncertainty scores using: mean_change, acq_step: 560
+313it [00:07, 42.55it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 560 is 0.9585
+Calulating uncertainty scores using: mean_change, acq_step: 570
+313it [00:07, 42.68it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 570 is 0.9577
+Calulating uncertainty scores using: mean_change, acq_step: 580
+313it [00:07, 42.45it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 580 is 0.9412
+Calulating uncertainty scores using: mean_change, acq_step: 590
+313it [00:07, 41.51it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 590 is 0.9561
+Calulating uncertainty scores using: mean_change, acq_step: 600
+313it [00:07, 42.33it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 600 is 0.9613
+Calulating uncertainty scores using: mean_change, acq_step: 610
+313it [00:07, 42.46it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 610 is 0.9563
+Calulating uncertainty scores using: mean_change, acq_step: 620
+313it [00:07, 42.22it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 620 is 0.9416
+Calulating uncertainty scores using: mean_change, acq_step: 630
+313it [00:07, 42.55it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 630 is 0.9579
+Calulating uncertainty scores using: mean_change, acq_step: 640
+313it [00:07, 42.47it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 640 is 0.9641
+Calulating uncertainty scores using: mean_change, acq_step: 650
+313it [00:07, 42.65it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 650 is 0.9623
+Calulating uncertainty scores using: mean_change, acq_step: 660
+313it [00:07, 42.55it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 660 is 0.9629
+Calulating uncertainty scores using: mean_change, acq_step: 670
+313it [00:07, 42.23it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 670 is 0.963
+Calulating uncertainty scores using: mean_change, acq_step: 680
+313it [00:07, 41.07it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 680 is 0.9588
+Calulating uncertainty scores using: mean_change, acq_step: 690
+313it [00:07, 41.31it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 690 is 0.9619
+Calulating uncertainty scores using: mean_change, acq_step: 700
+313it [00:07, 41.98it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 700 is 0.9611
+Calulating uncertainty scores using: mean_change, acq_step: 710
+313it [00:07, 41.38it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 710 is 0.9665
+Calulating uncertainty scores using: mean_change, acq_step: 720
+313it [00:07, 42.63it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 720 is 0.9683
+Calulating uncertainty scores using: mean_change, acq_step: 730
+313it [00:07, 41.18it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 730 is 0.9642
+Calulating uncertainty scores using: mean_change, acq_step: 740
+313it [00:07, 41.68it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 740 is 0.9613
+Calulating uncertainty scores using: mean_change, acq_step: 750
+313it [00:07, 41.37it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 750 is 0.9617
+Calulating uncertainty scores using: mean_change, acq_step: 760
+313it [00:07, 42.49it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 760 is 0.9674
+Calulating uncertainty scores using: mean_change, acq_step: 770
+313it [00:07, 42.54it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 770 is 0.9643
+Calulating uncertainty scores using: mean_change, acq_step: 780
+313it [00:07, 42.53it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 780 is 0.9651
+Calulating uncertainty scores using: mean_change, acq_step: 790
+313it [00:07, 41.54it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 790 is 0.9673
+Calulating uncertainty scores using: mean_change, acq_step: 800
+313it [00:07, 42.63it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 800 is 0.9679
+Calulating uncertainty scores using: mean_change, acq_step: 810
+313it [00:07, 42.04it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 810 is 0.9733
+Calulating uncertainty scores using: mean_change, acq_step: 820
+313it [00:07, 41.01it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 820 is 0.962
+Calulating uncertainty scores using: mean_change, acq_step: 830
+313it [00:07, 42.48it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 830 is 0.9669
+Calulating uncertainty scores using: mean_change, acq_step: 840
+313it [00:07, 42.48it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 840 is 0.9666
+Calulating uncertainty scores using: mean_change, acq_step: 850
+313it [00:07, 42.45it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 850 is 0.9708
+Calulating uncertainty scores using: mean_change, acq_step: 860
+313it [00:07, 42.44it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 860 is 0.9679
+Calulating uncertainty scores using: mean_change, acq_step: 870
+313it [00:07, 42.41it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 870 is 0.9683
+Calulating uncertainty scores using: mean_change, acq_step: 880
+313it [00:07, 42.47it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 880 is 0.9697
+Calulating uncertainty scores using: mean_change, acq_step: 890
+313it [00:07, 42.43it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 890 is 0.9712
+Calulating uncertainty scores using: mean_change, acq_step: 900
+313it [00:07, 42.51it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 900 is 0.9693
+Calulating uncertainty scores using: mean_change, acq_step: 910
+313it [00:07, 42.51it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 910 is 0.9656
+Calulating uncertainty scores using: mean_change, acq_step: 920
+313it [00:07, 42.88it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 920 is 0.9719
+Calulating uncertainty scores using: mean_change, acq_step: 930
+313it [00:07, 42.31it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 930 is 0.9718
+Calulating uncertainty scores using: mean_change, acq_step: 940
+313it [00:07, 42.52it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 940 is 0.9709
+Calulating uncertainty scores using: mean_change, acq_step: 950
+313it [00:07, 41.38it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 950 is 0.9723
+Calulating uncertainty scores using: mean_change, acq_step: 960
+313it [00:07, 42.14it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 960 is 0.9751
+Calulating uncertainty scores using: mean_change, acq_step: 970
+313it [00:07, 42.13it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 970 is 0.9758
+Calulating uncertainty scores using: mean_change, acq_step: 980
+313it [00:07, 41.67it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 980 is 0.9693
+Calulating uncertainty scores using: mean_change, acq_step: 990
+313it [00:07, 40.80it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 990 is 0.974
+Calulating uncertainty scores using: mean_change, acq_step: 1000
+313it [00:07, 42.39it/s]
+Database saved successfully to ./UDL_results/acq_database
+Accuracy for acq_fn mean_change at acq-step 1000 is 0.9737
+313it [00:07, 42.35it/s]
+Test accuracy for acquisition function: mean_change = 0.9735

@@ -9,3 +9,9 @@ __pycache__/
 
 # System files (Optional)
 .DS_Store
+
+# Backups and scratch copies
+Backup/
+*copy*
+*_copy*
+*fuckup*

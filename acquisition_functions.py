@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 
 def calc_entropy(preds):
     # Input of shape T x N x dim_output
@@ -17,8 +18,6 @@ def calc_entropy(preds):
 
     return entropy
 
-
-
 def calc_BALD(preds):
 
     entropy = calc_entropy(preds)
@@ -31,21 +30,24 @@ def calc_BALD(preds):
 
     return MI
 
+# Modified version of variation ratio 
+def calc_var_rat_mod(preds):
+    
+    T,N,C = preds.shape
 
+    # Takes mean prob over T, then takes max over C
+    mean_preds = torch.mean(preds, dim = 0)
+
+    max_preds,_ = torch.max(mean_preds, dim =1)
+
+    return 1.0 - max_preds
 
 def calc_var_rat(preds):
     
     T,N,C = preds.shape
 
-
-    #mean_preds = torch.mean(preds, dim = 0)
-
-    #max_preds,_ = torch.max(mean_preds, dim =1)
-
-
     # Gets all of the indices of the category with the maximum probability for all T x N samples
     max_indices = torch.argmax(preds, dim=2, keepdim = True)
-    #print(f"max indices shape: {max_indices.shape}")
 
     # Fills tensor with zeros
     one_hot = torch.zeros_like(preds, dtype = torch.float)
@@ -53,21 +55,17 @@ def calc_var_rat(preds):
 
     # Creates one-hot encoding of probabilities
     one_hot.scatter_(2, max_indices, 1.0)
-    #print(f"one_hot scatter: {one_hot.shape}")
 
     # We now sum over T to get the total number of predictions of each category for a given n
     sum_T = torch.sum(one_hot, dim=0)       # N x C 
-    #print(f"sum over T: {sum_T.shape}")
 
     # Gets the max number for each class for every x 
     f_x,_ = torch.max(sum_T, dim=1)         # N
 
     return 1.0 - (f_x/T)
 
-
-
 def calc_Mean_STD(preds):
-    T,N,C = preds.shape
+    T,N,C = preds.shape 
 
     mean_squared_pred = torch.mean(preds**2, dim =0)        # Mean over T to get MC approximation of expectation, leaving N x C tensor 
     mean_pred_squared = torch.mean(preds, dim=0)**2
@@ -77,14 +75,10 @@ def calc_Mean_STD(preds):
 
     return sigmas_c
 
-
-
 def calc_uniform(preds):
     T,N,C = preds.shape
 
     return torch.rand(N, device = preds.device) 
-
-
 
 def get_TNC_preds(x, model, T, deterministic: bool = False):
     N = x.shape[0]
@@ -109,3 +103,44 @@ def get_TNC_preds(x, model, T, deterministic: bool = False):
 
     # Return probabilities associated with logits
     return F.softmax(logits_TNC, dim = -1)
+
+def mean_change(x, model):
+
+    x = x.to(model.device)
+    
+    logits = model(x)
+    probs = F.softmax(logits,dim =-1)
+
+    B,C = probs.shape
+
+    # A single expected gradient will be calculated and stored for each sample in the batch
+    scores = torch.zeros(B, device = model.device)
+    
+    #Only finding gradients over last layer
+    final_layer = model.final_layer
+
+    gradient_norms = torch.zeros((B,C), device = model.device)
+
+    for c in range(C):
+        # Creates B dimensional tensor of class labels
+        y_c = torch.full((B,), c, device = model.device, dtype = torch.long)  
+
+        # Gets cross entropy loss for each logit-label pair. Ensures it does not reduce to a mean, so stays [B,] dimensional
+        loss = nn.CrossEntropyLoss(reduction = "none")(logits, y_c)
+
+        # Getting gradients
+        grads = torch.autograd.grad(
+            outputs = loss,
+            inputs = tuple(final_layer.parameters()),
+            grad_outputs = torch.eye(B, device = model.device),
+            retain_graph = True,
+            is_grads_batched = True
+        )
+
+        # Calculating Norms of gradients
+        grad_norm = torch.sqrt((torch.norm(grads[0], dim = [1,2]))**2 + (torch.norm(grads[1], dim = [1]))**2)
+
+        # For each sample, we add the gradient norm for the cth class weighted by the probability,
+        # once we have summed over all c this gives the expected gradient for each sample
+        scores += grad_norm * probs[:,c]
+    return scores
