@@ -54,11 +54,9 @@ class reg_CNN(nn.Module):
             nn.Linear(in_features = hidden_dim, out_features = output_dim)
         )
 
-
     def forward(self, x):
         return self.Layers(x)
     
-
     def train_model(self, train_indices= None):
         self.current_epoch = 0
         if train_indices is None:
@@ -92,7 +90,6 @@ class reg_CNN(nn.Module):
 
                 epoch_loss += loss.item()
 
-            #print(f"epoch loss = {epoch_loss}")
             self.current_epoch +=1
 
     def test_model(self):
@@ -113,8 +110,6 @@ class reg_CNN(nn.Module):
 
                 total_loss += loss.item()
 
-                #print(f"Target shape = {target.shape}")
-                #print(f"Target.numel = {target.numel()}")
                 n+= target.numel()
 
             return np.sqrt(total_loss/n)        #returns RMSE
@@ -151,7 +146,6 @@ def reg_acquisition(args, run_num = 0):
     return model
 
 def run_reg_experiment(args, run_nums):
-    opt_wd= 1e-4
 
     for run_num in run_nums:
         model = reg_acquisition(args, run_num)

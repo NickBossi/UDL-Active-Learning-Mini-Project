@@ -467,4 +467,3 @@ def plot_retrain_vs_not(file_name = "retrain_vs_not"):
         print(f"Plot saved successfully as {save_name}")
 
 
-plot_retrain_vs_not()

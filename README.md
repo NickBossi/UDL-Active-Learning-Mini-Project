@@ -75,7 +75,7 @@ For the **regression** extension, the acquisition score is the **predictive vari
 
 ```
 Code/
-├── project.ipynb            # Main entry point — runs and orchestrates all experiments
+├── experiments.ipynb        # Main entry point — runs and orchestrates all experiments
 ├── acquisition_functions.py # Entropy, BALD, Var Ratios, Mean STD, modified VR, EMC
 ├── dropout_CNN.py           # Bayesian MC-dropout CNN + classification acquisition loop
 ├── feature_CNN.py           # CNN feature extractor φ(x) used by the regression models
@@ -89,7 +89,7 @@ Code/
 └── UDL_results/             # Saved experiment databases (pickled)
 ```
 
-> **Note:** `main.py` and `test.py` are scratch/development files; the canonical workflow lives in `project.ipynb`.
+> **Note:** the canonical workflow lives in `experiments.ipynb`, which imports and orchestrates the modules below.
 
 ### Key modules
 
@@ -123,7 +123,7 @@ The code automatically selects the best available device — **MPS** (Apple Sili
 ## Quick Start
 
 ```bash
-uv run jupyter lab project.ipynb   # or: jupyter lab project.ipynb
+uv run jupyter lab experiments.ipynb   # or: jupyter lab experiments.ipynb
 ```
 
 Run the cells top to bottom:
